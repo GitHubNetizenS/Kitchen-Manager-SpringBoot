@@ -1,21 +1,13 @@
 package com.kitchen_manager.service;
 
-import com.kitchen_manager.entity.*;
-import com.kitchen_manager.dto.*;
-import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
-import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,12 +23,17 @@ public class FileUploadService {
         // 创建上传目录
         File uploadDir = new File(UPLOAD_DIR);
         if (!uploadDir.exists()) {
-            uploadDir.mkdirs();
+            boolean isMade = uploadDir.mkdirs();
+
+            System.out.println(isMade);
         }
 
         // 生成唯一文件名
         String originalFilename = file.getOriginalFilename();
-        String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        String extension = null;
+        if (originalFilename != null) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        }
         String uniqueFilename = "avatar_" + userId + "_" + System.currentTimeMillis() + extension;
 
         // 保存文件
