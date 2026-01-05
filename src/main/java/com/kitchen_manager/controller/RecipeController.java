@@ -57,6 +57,23 @@ public class RecipeController {
     }
 
     /**
+     * 点击增加菜谱热度
+     * POST /api/recipe/popularity
+     */
+    @PostMapping("/recipe/popularity")
+    public ApiResponse<Void> incrementPopularity(
+            @RequestParam("recipe_id") Integer recipeId) {
+
+        try {
+            recipeService.incrementPopularity(recipeId);
+            return ApiResponse.success("热度增加成功", null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("增加热度失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取菜谱所需食材
      * GET /api/recipe/ingredients
      */

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.sql.Timestamp;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -22,23 +23,51 @@ public class IngredientService {
     @Transactional
     public int addIngredients(Integer userId, List<String> ingredientNames) {
         Map<String, Integer> ingredientMap = loadIngredientMap();
-        int matchedCount = 0;
+        int processedCount = 0;
 
         for (String name : ingredientNames) {
             int matchedId = findBestMatch(name, ingredientMap);
             if (matchedId != -1) {
+                processedCount += upsertUserIngredient(userId, matchedId);
+            }
+        }
+        return processedCount;
+    }
+    /**
+     * 更新或插入用户食材关联信息
+     * @param userId 用户ID
+     * @param ingredientId 食材ID
+     * @return 1表示成功，0表示失败
+     */
+    private int upsertUserIngredient(Integer userId, Integer ingredientId) {
+        try {
+            // 1. 先查询是否已存在该用户和食材的关联
+            List<UserIngredient> existingItems = userIngredientRepository.findAll().stream()
+                    .filter(ui -> ui.getUserId().equals(userId) && ui.getIngredientId().equals(ingredientId))
+                    .collect(Collectors.toList());
+
+            if (!existingItems.isEmpty()) {
+                // 2. 如果已存在，更新第一条记录
+                UserIngredient existingItem = existingItems.get(0);
+                existingItem.setStorageTime(new Timestamp(System.currentTimeMillis()));
+                existingItem.setQuantity(1);
+                userIngredientRepository.save(existingItem);
+                return 1;
+            } else {
+                // 3. 如果不存在，创建新记录
                 UserIngredient ui = new UserIngredient();
                 ui.setUserId(userId);
-                ui.setIngredientId(matchedId);
+                ui.setIngredientId(ingredientId);
                 ui.setQuantity(1);
                 ui.setStorageTime(new Timestamp(System.currentTimeMillis()));
                 userIngredientRepository.save(ui);
-                matchedCount++;
+                return 1;
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0;
         }
-        return matchedCount;
     }
-
     @Transactional
     public void deleteUserIngredient(Integer userId, String ingredientName) {
         userIngredientRepository.deleteByUserIdAndIngredientName(userId, ingredientName);
