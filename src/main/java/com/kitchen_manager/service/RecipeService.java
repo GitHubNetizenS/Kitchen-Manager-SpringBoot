@@ -1,5 +1,6 @@
 package com.kitchen_manager.service;
 
+import com.kitchen_manager.dto.HistoryRecipeDTO;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -201,10 +202,92 @@ public class RecipeService {
         return result;
     }
 
+
     /**
-     * 获取用户烹饪烹饪历史菜谱列表（支持按时间或匹配值排序）
+     * 按烹饪时间排序获取历史菜谱（包含历史记录ID和烹饪时间）
      */
-    public List<Recipe> getHistoryRecipes(Integer userId, String sortType) {
+    private List<HistoryRecipeDTO> getHistoryRecipesByTime(Integer userId) {
+        // 获取用户的所有历史记录
+        List<UserHistory> histories = historyRepository.findByUserIdOrderByCookTimeDesc(userId);
+
+        if (histories.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 收集菜谱ID
+        List<Integer> recipeIds = histories.stream()
+                .map(UserHistory::getRecipeId)
+                .collect(Collectors.toList());
+
+        // 批量查询菜谱信息
+        List<Recipe> recipes = recipeRepository.findAllById(recipeIds);
+        Map<Integer, Recipe> recipeMap = recipes.stream()
+                .collect(Collectors.toMap(Recipe::getRecipeId, recipe -> recipe));
+
+        // 创建DTO列表，保持时间顺序
+        List<HistoryRecipeDTO> result = new ArrayList<>();
+        for (UserHistory history : histories) {
+            Recipe recipe = recipeMap.get(history.getRecipeId());
+            if (recipe != null) {
+                // 创建DTO对象，包含历史记录ID、菜谱信息和烹饪时间
+                HistoryRecipeDTO dto = new HistoryRecipeDTO();
+                dto.setHistoryId(history.getId());
+                dto.setRecipe(recipe);
+                dto.setCookTime(history.getCookTime()); // 关键：设置烹饪时间
+                result.add(dto);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 按匹配值排序获取历史菜谱（包含历史记录ID和烹饪时间）
+     */
+    private List<HistoryRecipeDTO> getHistoryRecipesByMatch(Integer userId) {
+        List<UserHistory> histories = historyRepository.findByUserIdOrderByCookTimeDesc(userId);
+
+        if (histories.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 提取菜谱ID
+        List<Integer> recipeIds = histories.stream()
+                .map(UserHistory::getRecipeId)
+                .collect(Collectors.toList());
+
+        // 查询按匹配值排序的菜谱
+        List<Recipe> recipes = recipeRepository.findByRecipeIdsOrderByMatchValue(recipeIds, userId);
+
+        // 创建菜谱ID到历史记录的映射（用于获取烹饪时间）
+        Map<Integer, UserHistory> historyMap = new HashMap<>();
+        for (UserHistory history : histories) {
+            // 如果有重复菜谱，取最近的一条记录
+            if (!historyMap.containsKey(history.getRecipeId())) {
+                historyMap.put(history.getRecipeId(), history);
+            }
+        }
+
+        // 创建DTO列表
+        List<HistoryRecipeDTO> result = new ArrayList<>();
+        for (Recipe recipe : recipes) {
+            UserHistory history = historyMap.get(recipe.getRecipeId());
+            if (history != null) {
+                HistoryRecipeDTO dto = new HistoryRecipeDTO();
+                dto.setHistoryId(history.getId());
+                dto.setRecipe(recipe);
+                dto.setCookTime(history.getCookTime()); // 关键：设置烹饪时间
+                result.add(dto);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 获取用户烹饪历史菜谱列表（支持按时间或匹配值排序）
+     */
+    public List<HistoryRecipeDTO> getHistoryRecipes(Integer userId, String sortType) {
         if ("time".equals(sortType)) {
             return getHistoryRecipesByTime(userId);
         } else if ("match".equals(sortType)) {
@@ -215,41 +298,10 @@ public class RecipeService {
     }
 
     /**
-     * 按烹饪时间排序获取历史菜谱
+     * 删除历史记录（基于历史记录ID）
      */
-    private List<Recipe> getHistoryRecipesByTime(Integer userId) {
-        List<UserHistory> historyList = historyRepository
-                .findByUserIdOrderByCookTimeDesc(userId);
-
-        if (historyList.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        List<Integer> recipeIds = historyList.stream()
-                .map(UserHistory::getRecipeId)
-                .collect(Collectors.toList());
-
-        List<Recipe> recipes = recipeRepository.findAllById(recipeIds);
-
-        Map<Integer, Recipe> recipeMap = recipes.stream()
-                .collect(Collectors.toMap(Recipe::getRecipeId, r -> r));
-
-        return recipeIds.stream()
-                .map(recipeMap::get)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * 按匹配值排序获取历史菜谱
-     */
-    private List<Recipe> getHistoryRecipesByMatch(Integer userId) {
-        List<Integer> recipeIds = historyRepository.findRecipeIdsByUserId(userId);
-
-        if (recipeIds.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        return recipeRepository.findByRecipeIdsOrderByMatchValue(recipeIds, userId);
+    @Transactional
+    public void deleteHistory(Integer historyId) {
+        historyRepository.deleteById(historyId);
     }
 }

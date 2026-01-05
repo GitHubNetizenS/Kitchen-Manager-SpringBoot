@@ -28,4 +28,13 @@ public interface UserHistoryRepository extends JpaRepository<UserHistory, Intege
     @Modifying
     @Query("UPDATE UserHistory h SET h.cookTime = :newTime WHERE h.userId = :userId AND h.recipeId = :recipeId")
     void updateCookTime(@Param("userId") Integer userId, @Param("recipeId") Integer recipeId, @Param("newTime") Timestamp newTime);
+
+    @Query("SELECT h.id, h.recipeId FROM UserHistory h WHERE h.userId = :userId ORDER BY h.cookTime DESC")
+    List<Object[]> findHistoryAndRecipeIdsByUserId(@Param("userId") Integer userId);
+
+    // 或者使用自定义查询获取完整信息
+    @Query("SELECT h FROM UserHistory h WHERE h.userId = :userId ORDER BY h.cookTime DESC")
+    List<UserHistory> findUserHistoriesWithIds(@Param("userId") Integer userId);
+
+
 }

@@ -1,26 +1,54 @@
-package com.kitchen_manager.entity;
+package com.kitchen_manager.entity; // 注意：后端包名可能不同
 
-import lombok.Data;
-import java.sql.Timestamp;
 import jakarta.persistence.*;
+import java.sql.Timestamp;
 
-/**
- * 用户历史记录表
- */
-@Data
 @Entity
 @Table(name = "user_history")
 public class UserHistory {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;         // 用户历史记录关联ID
+    private Integer id;
 
     @Column(name = "user_id")
-    private Integer userId;     // 关联用户ID
+    private Integer userId;
 
     @Column(name = "recipe_id")
-    private Integer recipeId;   // 关联菜谱ID
+    private Integer recipeId;
 
     @Column(name = "cook_time")
-    private Timestamp cookTime; // 烹饪时间（该时间指点击“吃这个”的时间。）
+    private Timestamp cookTime;
+
+    // Getter和Setter
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Integer getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Integer userId) {
+        this.userId = userId;
+    }
+
+    public Integer getRecipeId() {
+        return recipeId;
+    }
+
+    public void setRecipeId(Integer recipeId) {
+        this.recipeId = recipeId;
+    }
+
+    public Timestamp getCookTime() {
+        return cookTime;
+    }
+
+    public void setCookTime(Timestamp cookTime) {
+        this.cookTime = cookTime;
+    }
 }
