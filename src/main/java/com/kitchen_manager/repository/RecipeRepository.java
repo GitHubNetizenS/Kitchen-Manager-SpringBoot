@@ -2,6 +2,7 @@ package com.kitchen_manager.repository;
 
 import com.kitchen_manager.entity.*;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -58,4 +59,25 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             "ORDER BY totalMatch DESC")
     List<Recipe> findByRecipeIdsOrderByMatchValue(@Param("recipeIds") List<Integer> recipeIds,
                                                   @Param("userId") Integer userId);
+
+    /**
+     * 增加菜谱热度
+     */
+    @Modifying
+    @Query("UPDATE Recipe r SET r.popularity = r.popularity + 1 WHERE r.recipeId = :recipeId")
+    void incrementPopularity(@Param("recipeId") Integer recipeId);
+
+    /**
+     * 增加菜谱热度（指定增加值）
+     */
+    @Modifying
+    @Query("UPDATE Recipe r SET r.popularity = r.popularity + :amount WHERE r.recipeId = :recipeId")
+    void increasePopularity(@Param("recipeId") Integer recipeId, @Param("amount") int amount);
+
+    /**
+     * 减少菜谱热度（确保热度不会小于0）
+     */
+    @Modifying
+    @Query("UPDATE Recipe r SET r.popularity = CASE WHEN (r.popularity - :amount) < 0 THEN 0 ELSE (r.popularity - :amount) END WHERE r.recipeId = :recipeId")
+    void decreasePopularity(@Param("recipeId") Integer recipeId, @Param("amount") int amount);
 }

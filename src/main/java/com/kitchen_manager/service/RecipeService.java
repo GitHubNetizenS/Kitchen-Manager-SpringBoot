@@ -20,6 +20,30 @@ public class RecipeService {
         return recipeRepository.findById(recipeId).orElse(null);
     }
 
+    /**
+     * 增加菜谱热度
+     */
+    @Transactional
+    public void incrementPopularity(Integer recipeId) {
+        recipeRepository.incrementPopularity(recipeId);
+    }
+
+    /**
+     * 增加菜谱热度（指定增加值）
+     */
+    @Transactional
+    public void increasePopularity(Integer recipeId, int amount) {
+        recipeRepository.increasePopularity(recipeId, amount);
+    }
+
+    /**
+     * 减少菜谱热度（指定减少值）
+     */
+    @Transactional
+    public void decreasePopularity(Integer recipeId, int amount) {
+        recipeRepository.decreasePopularity(recipeId, amount);
+    }
+
     public List<Recipe> getAllRecipes() {
         return recipeRepository.findAllOrderByPopularity();
     }
@@ -35,11 +59,17 @@ public class RecipeService {
         favorite.setRecipeId(recipeId);
         favorite.setFavoriteTime(new Timestamp(System.currentTimeMillis()));
         favoriteRepository.save(favorite);
+
+        // 收藏时增加热度10
+        increasePopularity(recipeId, 10);
     }
 
     @Transactional
     public void removeFavorite(Integer userId, Integer recipeId) {
         favoriteRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+
+        // 取消收藏时减少热度10（确保不小于0）
+        decreasePopularity(recipeId, 10);
     }
 
     public long getFavoriteCount(Integer userId) {
