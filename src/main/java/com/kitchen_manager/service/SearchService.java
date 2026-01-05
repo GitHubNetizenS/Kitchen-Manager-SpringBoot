@@ -1,21 +1,10 @@
 package com.kitchen_manager.service;
 
 import com.kitchen_manager.entity.*;
-import com.kitchen_manager.dto.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +29,9 @@ public class SearchService {
 
     private List<Recipe> sortByTagMatch(List<Recipe> recipes, Integer userId) {
         List<Integer> userTagIds = userTagRepository.findTagIdsByUserId(userId);
-        // 这里需要实现标签匹配度计算逻辑
+
+        System.out.println("userTagIds: " + userTagIds);
+        // TODO: 这里需要实现标签匹配度计算逻辑
         return recipes; // 简化实现
     }
 
@@ -48,7 +39,7 @@ public class SearchService {
         List<UserIngredient> userIngredients = userIngredientRepository.findByUserId(userId);
         List<Integer> userIngredientIds = userIngredients.stream()
                 .map(UserIngredient::getIngredientId)
-                .collect(Collectors.toList());
+                .toList();
 
         // 计算每个菜谱的食材匹配度
         Map<Integer, Long> matchCounts = new HashMap<>();
@@ -73,4 +64,3 @@ public class SearchService {
         return recipes;
     }
 }
-

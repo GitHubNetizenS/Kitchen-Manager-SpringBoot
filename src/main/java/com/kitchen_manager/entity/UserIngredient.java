@@ -1,26 +1,29 @@
 package com.kitchen_manager.entity;
 
-import jakarta.persistence.*;
 import lombok.Data;
 import java.sql.Timestamp;
+import jakarta.persistence.*;
 
+/**
+ * 用户食材库存表
+ */
 @Data
 @Entity
 @Table(name = "user_ingredient")
 public class UserIngredient {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer stockId;
+    private Integer stockId;        // 库存记录ID
 
     @Column(name = "user_id")
-    private Integer userId;
+    private Integer userId;         // 关联用户表
 
     @Column(name = "ingredient_id")
-    private Integer ingredientId;
+    private Integer ingredientId;   // 关联食材表
 
     @Column(name = "quantity")
-    private Integer quantity;
+    private Integer quantity;       // 当前食材是否仍有存量
 
     @Column(name = "storage_time")
-    private Timestamp storageTime;
+    private Timestamp storageTime;  // 入库时间
 }

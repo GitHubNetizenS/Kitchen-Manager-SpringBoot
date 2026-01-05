@@ -1,7 +1,6 @@
 package com.kitchen_manager.controller;
 
 import com.kitchen_manager.common.ApiResponse;
-import com.kitchen_manager.dto.*;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import com.kitchen_manager.service.*;
@@ -89,12 +88,7 @@ public class RecipeController {
 
         try {
             List<Recipe> recipes;
-            if (tagId == 0) {
-                recipes = recipeService.getAllRecipes();
-            } else {
-                // TODO: 按标签查询
-                recipes = recipeService.getAllRecipes();
-            }
+            recipes = recipeService.getAllRecipes();
             return ApiResponse.success(recipes);
         } catch (Exception e) {
             return ApiResponse.error("获取菜谱列表失败: " + e.getMessage());

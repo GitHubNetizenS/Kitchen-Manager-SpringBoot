@@ -1,21 +1,12 @@
 package com.kitchen_manager.service;
 
 import com.kitchen_manager.entity.*;
-import com.kitchen_manager.dto.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
+
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,11 +23,8 @@ public class TagService {
         Map<String, List<Integer>> result = new HashMap<>();
 
         for (UserTag ut : userTags) {
-            Tag tag = tagRepository.findById(ut.getTagId()).orElse(null);
-            if (tag != null) {
-                result.computeIfAbsent(tag.getCategory(), k -> new ArrayList<>())
-                        .add(ut.getTagId());
-            }
+            tagRepository.findById(ut.getTagId()).ifPresent(tag -> result.computeIfAbsent(tag.getCategory(), k -> new ArrayList<>())
+                    .add(ut.getTagId()));
         }
 
         return result;
@@ -56,4 +44,3 @@ public class TagService {
         }
     }
 }
-
