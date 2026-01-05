@@ -1,5 +1,6 @@
 package com.kitchen_manager.entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import jakarta.persistence.*;
 
@@ -13,12 +14,14 @@ public class Recipe {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "recipe_id")
+    @JsonProperty("recipe_id")
     private Integer recipeId;   // 菜谱唯一标识
 
     @Column(name = "name")
     private String name;        // 菜谱名称
 
     @Column(name = "image_url")
+    @JsonProperty("image_url")
     private String imageUrl;    // 封面图片URL
 
     @Column(name = "taste")
