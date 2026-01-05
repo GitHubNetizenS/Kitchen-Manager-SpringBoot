@@ -46,7 +46,8 @@ public class HistoryController {
 
     /**
      * 获取历史记录列表
-     * GET /api/history
+     * GET /api/history?user_id=1&sort=time
+     * sort参数: time(按烹饪时间) 或 match(按匹配值)
      */
     @GetMapping("/history")
     public ApiResponse<List<Recipe>> getHistory(
@@ -54,10 +55,10 @@ public class HistoryController {
             @RequestParam(value = "sort", defaultValue = "time") String sortType) {
 
         try {
-            List<Integer> recipeIds = recipeService.getHistoryRecipeIds(userId);
-            // 需要根据 sortType 排序并返回完整菜谱信息
-            return ApiResponse.success(List.of());
+            List<Recipe> recipes = recipeService.getHistoryRecipes(userId, sortType);
+            return ApiResponse.success(recipes);
         } catch (Exception e) {
+            e.printStackTrace();
             return ApiResponse.error("获取历史记录失败: " + e.getMessage());
         }
     }

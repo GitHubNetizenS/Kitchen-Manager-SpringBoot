@@ -66,7 +66,8 @@ public class FavoriteController {
 
     /**
      * 获取收藏列表
-     * GET /api/favorites
+     * GET /api/favorites?user_id=1&sort=time
+     * sort参数: time(按时间) 或 match(按匹配值)
      */
     @GetMapping("/favorites")
     public ApiResponse<List<Recipe>> getFavorites(
@@ -74,11 +75,11 @@ public class FavoriteController {
             @RequestParam(value = "sort", defaultValue = "time") String sortType) {
 
         try {
-            // 修复：调用service获取完整的菜谱列表，而不是只获取ID
-            List<Recipe> favorites = recipeService.getFavoriteRecipes(userId, sortType);
-            return ApiResponse.success(favorites);
+            List<Recipe> recipes = recipeService.getFavoriteRecipes(userId, sortType);
+            return ApiResponse.success(recipes);
         } catch (Exception e) {
             return ApiResponse.error("获取收藏列表失败: " + e.getMessage());
         }
     }
 }
+
