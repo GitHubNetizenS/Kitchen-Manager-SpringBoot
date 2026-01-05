@@ -62,4 +62,20 @@ public class HistoryController {
             return ApiResponse.error("获取历史记录失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 删除烹饪历史记录
+     * POST /api/deletehistory
+     */
+    @PostMapping("/deletehistory")
+    public ApiResponse<Void> deleteHistory(
+            @RequestParam("user_id") Integer userId,
+            @RequestParam("recipe_id") Integer recipeId) {
+        try {
+            recipeService.deleteHistory(userId, recipeId);
+            return ApiResponse.success("删除成功", null);
+        } catch (Exception e) {
+            return ApiResponse.error("删除失败: " + e.getMessage());
+        }
+    }
 }

@@ -5,6 +5,7 @@ import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -116,7 +117,7 @@ public class RecipeService {
         // 获取菜谱详情
         List<Recipe> recipes = recipeRepository.findAllById(recipeIds);
 
-        // 按原始顺序重新排列（因为findAllById不保证顺序）
+        // 保持原始顺序
         Map<Integer, Recipe> recipeMap = recipes.stream()
                 .collect(Collectors.toMap(Recipe::getRecipeId, r -> r));
 
@@ -130,24 +131,34 @@ public class RecipeService {
      * 按匹配值排序获取菜谱
      */
     private List<Recipe> getFavoriteRecipesByMatch(Integer userId) {
-        // 获取收藏的菜谱ID
         List<Integer> recipeIds = favoriteRepository.findRecipeIdsByUserId(userId);
 
         if (recipeIds.isEmpty()) {
             return new ArrayList<>();
         }
 
-        // 使用自定义查询按匹配值排序
         return recipeRepository.findByRecipeIdsOrderByMatchValue(recipeIds, userId);
     }
 
     @Transactional
     public void addHistory(Integer userId, Integer recipeId) {
-        UserHistory history = new UserHistory();
-        history.setUserId(userId);
-        history.setRecipeId(recipeId);
-        history.setCookTime(new Timestamp(System.currentTimeMillis()));
-        historyRepository.save(history);
+        // 检查是否已存在
+        if (historyRepository.existsByUserIdAndRecipeId(userId, recipeId)) {
+            // 如果存在，更新时间
+            historyRepository.updateCookTime(userId, recipeId, new Timestamp(System.currentTimeMillis()));
+        } else {
+            // 不存在，新增
+            UserHistory history = new UserHistory();
+            history.setUserId(userId);
+            history.setRecipeId(recipeId);
+            history.setCookTime(new Timestamp(System.currentTimeMillis()));
+            historyRepository.save(history);
+        }
+    }
+
+    @Transactional
+    public void deleteHistory(Integer userId, Integer recipeId) {
+        historyRepository.deleteByUserIdAndRecipeId(userId, recipeId);
     }
 
     public long getHistoryCount(Integer userId) {
@@ -191,7 +202,7 @@ public class RecipeService {
     }
 
     /**
-     * 获取用户烹饪历史菜谱列表（支持按时间或匹配值排序）
+     * 获取用户烹饪烹饪历史菜谱列表（支持按时间或匹配值排序）
      */
     public List<Recipe> getHistoryRecipes(Integer userId, String sortType) {
         if ("time".equals(sortType)) {
