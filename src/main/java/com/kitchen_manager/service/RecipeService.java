@@ -65,4 +65,36 @@ public class RecipeService {
     public List<Integer> getHistoryRecipeIds(Integer userId) {
         return historyRepository.findRecipeIdsByUserId(userId);
     }
+
+    public Map<String, Object> getRecipesByTagAndPage(Integer tagId, int page, int pageSize) {
+        // 计算偏移量
+        int offset = (page - 1) * pageSize;
+
+        List<Recipe> recipes;
+        long total;
+
+        // 根据 tagId 进行过滤
+        if (tagId == 0) {
+            // 全部菜谱
+            recipes = recipeRepository.findAllOrderByPopularityWithPagination(offset, pageSize);
+            total = recipeRepository.countAll();
+        } else {
+            // 按标签查询
+            recipes = recipeRepository.findByTagIdOrderByPopularityWithPagination(tagId, offset, pageSize);
+            total = recipeRepository.countByTagId(tagId);
+        }
+
+        // 计算总页数
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+
+        // 返回结果和分页信息
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", recipes);
+        result.put("currentPage", page);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+
+        return result;
+    }
 }

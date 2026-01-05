@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -81,15 +82,14 @@ public class RecipeController {
      * GET /api/recipelist
      */
     @GetMapping("/recipelist")
-    public ApiResponse<List<Recipe>> getRecipeListByTag(
+    public ApiResponse<Map<String, Object>> getRecipeListByTag(
             @RequestParam(value = "tag_id", defaultValue = "0") Integer tagId,
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "page_size", defaultValue = "100") int pageSize) {
+            @RequestParam(value = "page_size", defaultValue = "20") int pageSize) {
 
         try {
-            List<Recipe> recipes;
-            recipes = recipeService.getAllRecipes();
-            return ApiResponse.success(recipes);
+            Map<String, Object> result = recipeService.getRecipesByTagAndPage(tagId, page, pageSize);
+            return ApiResponse.success(result);
         } catch (Exception e) {
             return ApiResponse.error("获取菜谱列表失败: " + e.getMessage());
         }
