@@ -48,4 +48,14 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
     // 获取全部菜谱总数
     @Query(value = "SELECT COUNT(recipe_id) FROM recipe", nativeQuery = true)
     long countAll();
+
+    @Query("SELECT r, COALESCE(SUM(rt.matchAmount), 0) as totalMatch " +
+            "FROM Recipe r " +
+            "LEFT JOIN RecipeTag rt ON r.recipeId = rt.recipeId " +
+            "LEFT JOIN UserTag ut ON rt.tagId = ut.tagId AND ut.userId = :userId " +
+            "WHERE r.recipeId IN :recipeIds " +
+            "GROUP BY r.recipeId " +
+            "ORDER BY totalMatch DESC")
+    List<Recipe> findByRecipeIdsOrderByMatchValue(@Param("recipeIds") List<Integer> recipeIds,
+                                                  @Param("userId") Integer userId);
 }

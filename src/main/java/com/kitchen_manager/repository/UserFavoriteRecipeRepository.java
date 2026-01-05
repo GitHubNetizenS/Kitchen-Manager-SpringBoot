@@ -16,4 +16,7 @@ public interface UserFavoriteRecipeRepository extends JpaRepository<UserFavorite
     List<Integer> findRecipeIdsByUserId(@Param("userId") Integer userId);
 
     void deleteByUserIdAndRecipeId(Integer userId, Integer recipeId);
+
+    @Query("SELECT f FROM UserFavoriteRecipe f WHERE f.userId = :userId ORDER BY f.favoriteTime DESC")
+    List<UserFavoriteRecipe> findByUserIdOrderByFavoriteTimeDesc(@Param("userId") Integer userId);
 }

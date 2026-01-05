@@ -14,4 +14,7 @@ public interface UserHistoryRepository extends JpaRepository<UserHistory, Intege
 
     @Query("SELECT uh.recipeId FROM UserHistory uh WHERE uh.userId = :userId")
     List<Integer> findRecipeIdsByUserId(@Param("userId") Integer userId);
+
+    @Query("SELECT h FROM UserHistory h WHERE h.userId = :userId ORDER BY h.cookTime DESC")
+    List<UserHistory> findByUserIdOrderByCookTimeDesc(@Param("userId") Integer userId);
 }
