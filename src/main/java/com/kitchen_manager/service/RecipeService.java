@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.sql.Timestamp;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +22,33 @@ public class RecipeService {
 
     public List<Recipe> getAllRecipes() {
         return recipeRepository.findAllOrderByPopularity();
+    }
+
+    public List<Recipe> getFavoriteRecipes(Integer userId, String sortType) {
+        // 获取收藏的菜谱ID列表
+        List<Integer> recipeIds = favoriteRepository.findRecipeIdsByUserId(userId);
+
+        if (recipeIds.isEmpty()) {
+            return List.of();
+        }
+
+        // 根据ID获取完整的菜谱信息
+        List<Recipe> recipes = recipeRepository.findByIdIn(recipeIds);
+
+        // 根据排序类型排序
+        if ("match".equals(sortType)) {
+            // 按匹配值排序（需要实现匹配算法）
+            // 这里可以先返回按ID排序，后续再实现匹配算法
+            return recipes.stream()
+                    .sorted((r1, r2) -> r2.getRecipeId().compareTo(r1.getRecipeId()))
+                    .collect(Collectors.toList());
+        } else {
+            // 按收藏时间排序（需要从收藏表获取时间）
+            // 简化：按ID倒序
+            return recipes.stream()
+                    .sorted((r1, r2) -> r2.getRecipeId().compareTo(r1.getRecipeId()))
+                    .collect(Collectors.toList());
+        }
     }
 
     @Transactional

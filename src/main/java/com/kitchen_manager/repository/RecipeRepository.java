@@ -20,4 +20,7 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             "LEFT JOIN Ingredient i ON ri.ingredientId = i.ingredientId " +
             "WHERE r.name LIKE %:keyword% OR i.name LIKE %:keyword%")
     List<Recipe> searchByKeyword(@Param("keyword") String keyword);
+
+    @Query("SELECT r FROM Recipe r WHERE r.recipeId IN :ids")
+    List<Recipe> findByIdIn(@Param("ids") List<Integer> ids);
 }

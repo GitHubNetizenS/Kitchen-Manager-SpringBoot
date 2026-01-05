@@ -5,6 +5,7 @@ import com.kitchen_manager.entity.*;
 import com.kitchen_manager.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @RestController
@@ -73,12 +74,11 @@ public class FavoriteController {
             @RequestParam(value = "sort", defaultValue = "time") String sortType) {
 
         try {
-            List<Integer> recipeIds = recipeService.getFavoriteRecipeIds(userId);
-            // 需要根据 sortType 排序并返回完整菜谱信息
-            return ApiResponse.success(List.of());
+            // 修复：调用service获取完整的菜谱列表，而不是只获取ID
+            List<Recipe> favorites = recipeService.getFavoriteRecipes(userId, sortType);
+            return ApiResponse.success(favorites);
         } catch (Exception e) {
             return ApiResponse.error("获取收藏列表失败: " + e.getMessage());
         }
     }
 }
-
