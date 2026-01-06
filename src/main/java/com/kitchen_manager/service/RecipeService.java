@@ -350,4 +350,8 @@ public class RecipeService {
 
         return recipeMap;
     }
+    /*检查收藏状态*/
+    public boolean checkIfRecipeIsFavorite(Integer userId, Integer recipeId) {
+        return favoriteRepository.existsByUserIdAndRecipeId(userId, recipeId);
+    }
 }
