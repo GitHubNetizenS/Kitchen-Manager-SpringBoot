@@ -96,20 +96,30 @@ public class UserIngredientController {
     }
 
     /**
-     * 更新食材信息
-     * POST /api/updateingredient
+     * 更新食材信息（新增保质期参数）
      */
     @PostMapping("/updateingredient")
     public ApiResponse<Void> updateIngredient(
             @RequestParam("user_id") Integer userId,
             @RequestParam("ingredient_name") String ingredientName,
             @RequestParam("category") String category,
-            @RequestParam("storage_date") String storageDate) {
+            @RequestParam("storage_date") String storageDate,
+            @RequestParam(value = "custom_expiry_days", required = false) Integer customExpiryDays) {
+
+        // 添加日志
+        System.out.println("收到更新请求 - userId: " + userId +
+                ", ingredientName: " + ingredientName +
+                ", category: " + category +
+                ", storageDate: " + storageDate +
+                ", customExpiryDays: " + customExpiryDays);
 
         try {
-            userIngredientService.updateIngredient(userId, ingredientName, category, storageDate);
+            userIngredientService.updateIngredient(userId, ingredientName,
+                    category, storageDate, customExpiryDays);
             return ApiResponse.success("更新成功", null);
         } catch (Exception e) {
+            System.out.println("更新失败: " + e.getMessage());
+            e.printStackTrace();
             return ApiResponse.error("更新失败: " + e.getMessage());
         }
     }

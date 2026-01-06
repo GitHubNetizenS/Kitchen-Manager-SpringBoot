@@ -26,4 +26,7 @@ public class UserIngredient {
 
     @Column(name = "storage_time")
     private Timestamp storageTime;  // 入库时间
+
+    @Column(name = "custom_expiry_days")
+    private Integer customExpiryDays; //新增保质期字段
 }
