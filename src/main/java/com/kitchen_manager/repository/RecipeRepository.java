@@ -6,10 +6,13 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
 import java.util.List;
+import java.util.Map;
 
 @Repository
 public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
+
     @Query("SELECT r FROM Recipe r ORDER BY r.popularity DESC")
     List<Recipe> findAllOrderByPopularity();
 
@@ -80,4 +83,84 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
     @Modifying
     @Query("UPDATE Recipe r SET r.popularity = CASE WHEN (r.popularity - :amount) < 0 THEN 0 ELSE (r.popularity - :amount) END WHERE r.recipeId = :recipeId")
     void decreasePopularity(@Param("recipeId") Integer recipeId, @Param("amount") int amount);
+
+    // ============ 新增方法：支持收藏状态查询 ============
+
+    /**
+     * 查询所有菜谱（带收藏状态）
+     * 返回 Map 以便包含额外的 isFavorite 字段
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "ORDER BY r.popularity DESC " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findAllWithFavoriteStatus(@Param("userId") Integer userId,
+                                                        @Param("offset") int offset,
+                                                        @Param("limit") int limit);
+
+    /**
+     * 按标签查询菜谱（带收藏状态）
+     * 返回 Map 以便包含额外的 isFavorite 字段
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "FROM recipe r " +
+            "INNER JOIN recipe_tag rt ON r.recipe_id = rt.recipe_id " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "WHERE rt.tag_id = :tagId " +
+            "ORDER BY r.popularity DESC " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findByTagIdWithFavoriteStatus(@Param("tagId") Integer tagId,
+                                                            @Param("userId") Integer userId,
+                                                            @Param("offset") int offset,
+                                                            @Param("limit") int limit);
+
+    /**
+     * 根据菜谱ID查询（带收藏状态）- 用于单个菜谱查询
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "WHERE r.recipe_id = :recipeId", nativeQuery = true)
+    Map<String, Object> findByIdWithFavoriteStatus(@Param("recipeId") Integer recipeId,
+                                                   @Param("userId") Integer userId);
+
+    /**
+     * 查询用户收藏的菜谱ID列表
+     */
+    @Query(value = "SELECT recipe_id FROM userfavoriterecipe WHERE user_id = :userId", nativeQuery = true)
+    List<Integer> findFavoriteRecipeIdsByUserId(@Param("userId") Integer userId);
 }

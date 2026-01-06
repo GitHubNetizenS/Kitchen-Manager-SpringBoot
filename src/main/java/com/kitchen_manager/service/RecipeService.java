@@ -170,22 +170,47 @@ public class RecipeService {
         return historyRepository.findRecipeIdsByUserId(userId);
     }
 
-    public Map<String, Object> getRecipesByTagAndPage(Integer tagId, int page, int pageSize) {
+    /**
+     * 获取包含收藏状态的菜谱列表（分页）
+     */
+    public Map<String, Object> getRecipesByTagAndPageWithFavoriteStatus(Integer tagId, int page, int pageSize, Integer userId) {
         // 计算偏移量
         int offset = (page - 1) * pageSize;
 
-        List<Recipe> recipes;
+        List<Map<String, Object>> recipesWithFavorite;
         long total;
 
         // 根据 tagId 进行过滤
         if (tagId == 0) {
-            // 全部菜谱
-            recipes = recipeRepository.findAllOrderByPopularityWithPagination(offset, pageSize);
+            // 全部菜谱，包含收藏状态
+            recipesWithFavorite = recipeRepository.findAllWithFavoriteStatus(userId, offset, pageSize);
             total = recipeRepository.countAll();
         } else {
-            // 按标签查询
-            recipes = recipeRepository.findByTagIdOrderByPopularityWithPagination(tagId, offset, pageSize);
+            // 按标签查询，包含收藏状态
+            recipesWithFavorite = recipeRepository.findByTagIdWithFavoriteStatus(tagId, userId, offset, pageSize);
             total = recipeRepository.countByTagId(tagId);
+        }
+
+        // 转换数据结构，确保返回格式统一
+        List<Map<String, Object>> resultRecipes = new ArrayList<>();
+        for (Map<String, Object> recipeMap : recipesWithFavorite) {
+            Map<String, Object> formattedRecipe = new HashMap<>();
+
+            // 复制所有字段
+            for (Map.Entry<String, Object> entry : recipeMap.entrySet()) {
+                formattedRecipe.put(entry.getKey(), entry.getValue());
+            }
+
+            // 确保 isFavorite 字段存在且为 Boolean 类型
+            if (!formattedRecipe.containsKey("isFavorite")) {
+                formattedRecipe.put("isFavorite", false);
+            } else if (formattedRecipe.get("isFavorite") instanceof Number) {
+                // 如果数据库返回的是数字类型，转换为 Boolean
+                Number favoriteValue = (Number) formattedRecipe.get("isFavorite");
+                formattedRecipe.put("isFavorite", favoriteValue.intValue() == 1);
+            }
+
+            resultRecipes.add(formattedRecipe);
         }
 
         // 计算总页数
@@ -193,7 +218,7 @@ public class RecipeService {
 
         // 返回结果和分页信息
         Map<String, Object> result = new HashMap<>();
-        result.put("recipes", recipes);
+        result.put("recipes", resultRecipes);
         result.put("currentPage", page);
         result.put("pageSize", pageSize);
         result.put("total", total);
@@ -201,7 +226,6 @@ public class RecipeService {
 
         return result;
     }
-
 
     /**
      * 按烹饪时间排序获取历史菜谱（包含历史记录ID和烹饪时间）
@@ -303,5 +327,27 @@ public class RecipeService {
     @Transactional
     public void deleteHistory(Integer historyId) {
         historyRepository.deleteById(historyId);
+    }
+
+    /**
+     * 获取菜谱详情（包含收藏状态）
+     */
+    public Map<String, Object> getRecipeDetailWithFavoriteStatus(Integer recipeId, Integer userId) {
+        if (userId == null) {
+            userId = 0; // 未登录用户
+        }
+
+        Map<String, Object> recipeMap = recipeRepository.findByIdWithFavoriteStatus(recipeId, userId);
+
+        if (recipeMap == null) {
+            return null;
+        }
+
+        // 确保 isFavorite 字段存在
+        if (!recipeMap.containsKey("isFavorite")) {
+            recipeMap.put("isFavorite", false);
+        }
+
+        return recipeMap;
     }
 }
