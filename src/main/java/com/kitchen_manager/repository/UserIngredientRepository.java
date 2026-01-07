@@ -38,6 +38,8 @@ public interface UserIngredientRepository extends JpaRepository<UserIngredient, 
     Optional<UserIngredient> findByUserIdAndIngredientId(@Param("userId") Integer userId,
                                                          @Param("ingredientId") Integer ingredientId);
 
+    List<Integer> findIngredientIdsByUserId(Integer userId);
+
     /**
      * 通过用户ID和用户是否具有某个原料进行查询
      * @param userId 用户ID

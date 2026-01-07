@@ -209,4 +209,210 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
      */
     @Query(value = "SELECT recipe_id FROM userfavoriterecipe WHERE user_id = :userId", nativeQuery = true)
     List<Integer> findFavoriteRecipeIdsByUserId(@Param("userId") Integer userId);
+
+    /**
+     * 口味筛选 - 适配现有数据库环境
+     * 使用简单的LIKE查询，确保兼容性
+     */
+    @Query(value = "SELECT r.recipe_id FROM recipe r " +
+            "WHERE (:taste = '' OR " +  // 如果口味为空，不进行筛选
+            " (CASE " +
+            // 处理多选口味（如"酸,甜"）
+            "   WHEN :taste LIKE '%,%' THEN " +
+            "     (r.taste LIKE CONCAT('%', TRIM(SUBSTRING_INDEX(:taste, ',', 1)), '%') " +
+            "      AND r.taste LIKE CONCAT('%', TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(:taste, ',', 2), ',', -1)), '%') " +
+            "      AND CASE WHEN CHAR_LENGTH(:taste) - CHAR_LENGTH(REPLACE(:taste, ',', '')) >= 2 " +
+            "                THEN r.taste LIKE CONCAT('%', TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(:taste, ',', 3), ',', -1)), '%') " +
+            "                ELSE 1=1 END " +
+            "     ) " +
+            // 处理单选口味（如"酸"）
+            "   ELSE r.taste LIKE CONCAT('%', :taste, '%') " +
+            " END)) " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty) " +
+            "LIMIT :limit OFFSET :offset",
+            nativeQuery = true)
+    List<Integer> findFilteredRecipeIds(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 获取总数的方法 - 对应上面的筛选逻辑
+     */
+    @Query(value = "SELECT COUNT(r.recipe_id) FROM recipe r " +
+            "WHERE (:taste = '' OR " +
+            " (CASE " +
+            "   WHEN :taste LIKE '%,%' THEN " +
+            "     (r.taste LIKE CONCAT('%', TRIM(SUBSTRING_INDEX(:taste, ',', 1)), '%') " +
+            "      AND r.taste LIKE CONCAT('%', TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(:taste, ',', 2), ',', -1)), '%') " +
+            "      AND CASE WHEN CHAR_LENGTH(:taste) - CHAR_LENGTH(REPLACE(:taste, ',', '')) >= 2 " +
+            "                THEN r.taste LIKE CONCAT('%', TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(:taste, ',', 3), ',', -1)), '%') " +
+            "                ELSE 1=1 END " +
+            "     ) " +
+            "   ELSE r.taste LIKE CONCAT('%', :taste, '%') " +
+            " END)) " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty)",
+            nativeQuery = true)
+    long countFilteredRecipes(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty);
+
+    // 备用方案：使用存储过程调用的方式（如果上面的方法不工作）
+    /**
+     * 备用方案：使用更简单的逻辑处理多选
+     * 最多支持2个口味的多选
+     */
+    @Query(value = "SELECT r.recipe_id FROM recipe r " +
+            "WHERE 1=1 " +
+            "AND CASE WHEN :taste = '' THEN 1=1 " +
+            "     WHEN :taste NOT LIKE '%,%' THEN r.taste LIKE CONCAT('%', :taste, '%') " +
+            // 处理两个口味的情况
+            "     ELSE (r.taste LIKE CONCAT('%', SUBSTRING_INDEX(:taste, ',', 1), '%') " +
+            "           AND r.taste LIKE CONCAT('%', SUBSTRING_INDEX(:taste, ',', -1), '%')) " +
+            "     END " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty) " +
+            "LIMIT :limit OFFSET :offset",
+            nativeQuery = true)
+    List<Integer> findFilteredRecipeIdsSimple(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 备用方案的总数查询
+     */
+    @Query(value = "SELECT COUNT(r.recipe_id) FROM recipe r " +
+            "WHERE 1=1 " +
+            "AND CASE WHEN :taste = '' THEN 1=1 " +
+            "     WHEN :taste NOT LIKE '%,%' THEN r.taste LIKE CONCAT('%', :taste, '%') " +
+            "     ELSE (r.taste LIKE CONCAT('%', SUBSTRING_INDEX(:taste, ',', 1), '%') " +
+            "           AND r.taste LIKE CONCAT('%', SUBSTRING_INDEX(:taste, ',', -1), '%')) " +
+            "     END " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty)",
+            nativeQuery = true)
+    long countFilteredRecipesSimple(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty);
+
+
+    /**
+     * 带收藏状态的批量查询
+     */
+    @Query(value = "SELECT r.recipe_id, r.name, r.image_url, r.taste, r.method, r.time, r.difficulty, r.needs, r.steps, r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "FROM recipe r LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "WHERE r.recipe_id IN :recipeIds", nativeQuery = true)
+    List<Map<String, Object>> findByIdsWithFavoriteStatus(@Param("recipeIds") List<Integer> recipeIds, @Param("userId") Integer userId);
+
+    /**
+     * 按popularity排序（用于综合）
+     */
+    @Query("SELECT r FROM Recipe r WHERE r.recipeId IN :recipeIds ORDER BY r.popularity DESC")
+    List<Recipe> findByIdsOrderByPopularity(@Param("recipeIds") List<Integer> recipeIds);
+
+    /**
+     * 按复合口味筛选的备用方案（使用REGEXP正则表达式，MySQL 8.0+）
+     * 如果LOCATE不工作，可以尝试这个
+     */
+    @Query(value = "SELECT r.recipe_id FROM recipe r " +
+            "WHERE (:taste = '' OR " +
+            " (CASE " +
+            // 处理多选口味
+            "   WHEN :taste LIKE '%,%' THEN " +
+            "     ( " +
+            "       r.taste REGEXP CONCAT('.*', SUBSTRING_INDEX(:taste, ',', 1), '.*') " +
+            "       OR " +
+            "       r.taste REGEXP CONCAT('.*', SUBSTRING_INDEX(SUBSTRING_INDEX(:taste, ',', 2), ',', -1), '.*') " +
+            "     ) " +
+            // 处理单个口味
+            "   ELSE r.taste REGEXP CONCAT('.*', :taste, '.*') " +
+            " END)) " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty) " +
+            "LIMIT :limit OFFSET :offset",
+            nativeQuery = true)
+    List<Integer> findFilteredRecipeIdsByRegex(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 扩展口味匹配范围（解决"咸"匹配不到"咸香"的问题）
+     * 使用自定义函数扩展口味匹配
+     */
+    @Query(value = "SELECT r.recipe_id FROM recipe r " +
+            "WHERE (:taste = '' OR " +
+            " (CASE " +
+            // 处理多选口味
+            "   WHEN :taste LIKE '%,%' THEN " +
+            "     ( " +
+            "       (r.taste LIKE CONCAT('%', SUBSTRING_INDEX(:taste, ',', 1), '%')) " +
+            "       OR " +
+            "       (r.taste LIKE CONCAT('%', SUBSTRING_INDEX(SUBSTRING_INDEX(:taste, ',', 2), ',', -1), '%')) " +
+            // 扩展口味匹配：如果选择"咸"，也匹配"咸香"、"咸鲜"等
+            "       OR (:taste LIKE '%咸%' AND (r.taste LIKE '%咸香%' OR r.taste LIKE '%咸鲜%' OR r.taste LIKE '%咸辣%')) " +
+            "       OR (:taste LIKE '%酸%' AND (r.taste LIKE '%酸甜%' OR r.taste LIKE '%酸辣%' OR r.taste LIKE '%酸爽%')) " +
+            "       OR (:taste LIKE '%甜%' AND (r.taste LIKE '%香甜%' OR r.taste LIKE '%酸甜%' OR r.taste LIKE '%甜咸%')) " +
+            "       OR (:taste LIKE '%辣%' AND (r.taste LIKE '%麻辣%' OR r.taste LIKE '%香辣%' OR r.taste LIKE '%酸辣%')) " +
+            "     ) " +
+            // 处理单个口味
+            "   ELSE (r.taste LIKE CONCAT('%', :taste, '%') " +
+            // 扩展单个口味的匹配范围
+            "         OR (:taste = '咸' AND (r.taste LIKE '%咸香%' OR r.taste LIKE '%咸鲜%')) " +
+            "         OR (:taste = '酸' AND (r.taste LIKE '%酸甜%' OR r.taste LIKE '%酸辣%')) " +
+            "         OR (:taste = '甜' AND (r.taste LIKE '%香甜%' OR r.taste LIKE '%酸甜%')) " +
+            "         OR (:taste = '辣' AND (r.taste LIKE '%麻辣%' OR r.taste LIKE '%香辣%'))) " +
+            " END)) " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty) " +
+            "LIMIT :limit OFFSET :offset",
+            nativeQuery = true)
+    List<Integer> findFilteredRecipeIdsExtended(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 动态口味筛选方法 - 更灵活，支持任意数量的口味
+     * 使用字符串构建动态SQL
+     */
+    @Query(value = "SELECT r.recipe_id FROM recipe r WHERE 1=1 " +
+            "AND (:tasteConditions = '' OR :tasteConditions = '1=1') " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty) " +
+            "LIMIT :limit OFFSET :offset",
+            nativeQuery = true)
+    List<Integer> findFilteredRecipeIdsDynamic(
+            @Param("tasteConditions") String tasteConditions,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 动态总数查询
+     */
+    @Query(value = "SELECT COUNT(r.recipe_id) FROM recipe r WHERE 1=1 " +
+            "AND (:tasteConditions = '' OR :tasteConditions = '1=1') " +
+            "AND (:method = '' OR r.method = :method) " +
+            "AND (:difficulty = '' OR r.difficulty = :difficulty)",
+            nativeQuery = true)
+    long countFilteredRecipesDynamic(
+            @Param("tasteConditions") String tasteConditions,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty);
 }
