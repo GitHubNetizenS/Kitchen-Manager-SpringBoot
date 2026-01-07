@@ -102,12 +102,19 @@ public class RecipeController {
     public ApiResponse<Map<String, Object>> getRecipeListByTag(
             @RequestParam(value = "tag_id", defaultValue = "0") Integer tagId,
             @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "page_size", defaultValue = "20") int pageSize) {
+            @RequestParam(value = "page_size", defaultValue = "20") int pageSize,
+            @RequestParam(value = "user_id") Integer userId) {
+
+        if(null==userId || 0==userId) {
+            return ApiResponse.error("用户未登录，无法获取个性化推荐");
+        }
 
         try {
-            Map<String, Object> result = recipeService.getRecipesByTagAndPage(tagId, page, pageSize);
+            Map<String, Object> result = recipeService.getRecipesByTagAndPage(tagId, page, pageSize, userId);
+
             return ApiResponse.success(result);
         } catch (Exception e) {
+
             return ApiResponse.error("获取菜谱列表失败: " + e.getMessage());
         }
     }

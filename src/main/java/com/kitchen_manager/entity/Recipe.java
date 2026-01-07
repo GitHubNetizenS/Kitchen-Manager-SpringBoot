@@ -44,4 +44,16 @@ public class Recipe {
 
     @Column(name = "popularity")
     private Integer popularity; // 热度
+
+    @Transient
+    private double tagMatchScore;           // 标签匹配度
+
+    @Transient
+    private double ingredientMatchScore;    // 原料匹配度
+
+    @Transient
+    private double hotScore;                // 热度特征
+
+    @Transient
+    private double predictScore;            // 预测综合评分
 }

@@ -33,4 +33,16 @@ public interface UserIngredientRepository extends JpaRepository<UserIngredient, 
 
     void deleteByUserIdAndIngredientId(Integer userId, Integer ingredientId);
 
+    /**
+     * 通过用户ID和用户是否具有某个原料进行查询
+     * @param userId 用户ID
+     * @param quantity 是否具有某个原料，0代表没有，1表示有
+     * @return 符合条件的用户-原料关系
+     */
+    @Query( "SELECT ui " +
+            "FROM UserIngredient ui " +
+            "WHERE ui.userId=:userId AND ui.quantity=:quantity")
+    List<UserIngredient> findByUserIdAndQuantity(@Param("userId") Integer userId, @Param("quantity") int quantity);
+
+
 }

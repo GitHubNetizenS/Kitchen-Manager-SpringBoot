@@ -80,4 +80,51 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
     @Modifying
     @Query("UPDATE Recipe r SET r.popularity = CASE WHEN (r.popularity - :amount) < 0 THEN 0 ELSE (r.popularity - :amount) END WHERE r.recipeId = :recipeId")
     void decreasePopularity(@Param("recipeId") Integer recipeId, @Param("amount") int amount);
+
+    /**
+     * 获取菜谱候选集
+     * @param offset 偏移值
+     * @param limit 限制值
+     * @return 菜谱候选集列表
+     */
+    @Query(value =
+            "SELECT * " +
+            "FROM recipe " +
+            "LIMIT :limit " +
+            "OFFSET :offset",
+            nativeQuery = true)
+    List<Recipe> findAllForCandidateSet(@Param("offset") int offset,
+                                        @Param("limit") int limit);
+
+    /**
+     * 按标签ID获取菜谱候选集
+     * 只返回在当前tagId（1/2/3）对应的match_amount是三个核心标签（1/2/3）中最大值的菜谱
+     * @param tagId 标签ID（只能是1、2、3）
+     * @param offset 偏移值
+     * @param limit 限制值
+     * @return 菜谱候选集列表
+     */
+    @Query(value =
+            "SELECT r.* " +
+                    "FROM recipe r " +
+                    "WHERE r.recipe_id IN ( " +
+                    "   SELECT rt.recipe_id " +
+                    "   FROM recipe_tag rt " +
+                    "   WHERE rt.tag_id IN (1, 2, 3) " +  // 只考虑1、2、3三个标签
+                    "   GROUP BY rt.recipe_id " +
+                    "   HAVING MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+                    "          MAX(IF(rt.tag_id = 1, rt.match_amount, -1)) " +
+                    "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+                    "          MAX(IF(rt.tag_id = 2, rt.match_amount, -1)) " +
+                    "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+                    "          MAX(IF(rt.tag_id = 3, rt.match_amount, -1)) " +
+                    ") " +
+                    "ORDER BY r.popularity DESC " +
+                    "LIMIT :limit " +
+                    "OFFSET :offset",
+            nativeQuery = true)
+    List<Recipe> findByTagIdForCandidateSet(@Param("tagId") Integer tagId,
+                                            @Param("offset") int offset,
+                                            @Param("limit") int limit);
+
 }
