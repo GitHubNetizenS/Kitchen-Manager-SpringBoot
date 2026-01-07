@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface UserIngredientRepository extends JpaRepository<UserIngredient, Integer> {
@@ -32,6 +33,10 @@ public interface UserIngredientRepository extends JpaRepository<UserIngredient, 
                           @Param("storageTime") java.sql.Timestamp storageTime);
 
     void deleteByUserIdAndIngredientId(Integer userId, Integer ingredientId);
+    // 新增：根据用户ID和食材ID查询
+    @Query("SELECT ui FROM UserIngredient ui WHERE ui.userId = :userId AND ui.ingredientId = :ingredientId")
+    Optional<UserIngredient> findByUserIdAndIngredientId(@Param("userId") Integer userId,
+                                                         @Param("ingredientId") Integer ingredientId);
 
     /**
      * 通过用户ID和用户是否具有某个原料进行查询

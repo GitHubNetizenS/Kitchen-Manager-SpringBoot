@@ -80,12 +80,14 @@ public class HistoryController {
                 // 关键：确保返回完整的时间字符串
                 Timestamp cookTime = dto.getCookTime();
                 if (cookTime != null) {
-                    // 直接调用toString()方法，它会返回完整的日期时间字符串
-                    // toString()格式通常是：2026-01-02 20:06:09.0
                     item.put("cook_time", cookTime.toString());
                 } else {
                     item.put("cook_time", "");
                 }
+
+                // 添加收藏状态字段
+                boolean isFavorite = recipeService.checkIfRecipeIsFavorite(userId, dto.getRecipe().getRecipeId());
+                item.put("isFavorite", isFavorite);  // 重要！添加这行
 
                 result.add(item);
             }
@@ -96,7 +98,6 @@ public class HistoryController {
             return ApiResponse.error("获取历史记录失败: " + e.getMessage());
         }
     }
-
     /**
      * 删除烹饪历史记录（基于历史记录ID）
      * POST /api/deletehistory

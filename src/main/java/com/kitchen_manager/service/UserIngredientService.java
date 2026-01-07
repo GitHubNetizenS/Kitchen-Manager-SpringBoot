@@ -31,8 +31,13 @@ public class UserIngredientService {
                 Date storageDate = new Date(ui.getStorageTime().getTime());
                 response.setStorageDate(sdf.format(storageDate));
 
+                // 使用自定义保质期或默认保质期
+                Integer expiryDays = ui.getCustomExpiryDays() != null ?
+                        ui.getCustomExpiryDays() : ingredient.getExpiryDays();
+                response.setExpiryDays(expiryDays);
+
                 // 计算到期日
-                long expiryInMillis = (long) ingredient.getExpiryDays() * 24 * 60 * 60 * 1000;
+                long expiryInMillis = (long) expiryDays * 24 * 60 * 60 * 1000;
                 Date expiryDate = new Date(storageDate.getTime() + expiryInMillis);
                 response.setExpiryDate(sdf.format(expiryDate));
 
@@ -50,18 +55,43 @@ public class UserIngredientService {
 
     @Transactional
     public void updateIngredient(Integer userId, String ingredientName,
-                                 String category, String storageDate) throws Exception {
+                                 String category, String storageDate,
+                                 Integer customExpiryDays) throws Exception {
+
+        System.out.println("开始更新食材 - userId: " + userId +
+                ", ingredientName: " + ingredientName);
+
         // 更新食材分类
         Ingredient ingredient = ingredientRepository.findByName(ingredientName)
                 .orElseThrow(() -> new RuntimeException("食材不存在"));
+
+        System.out.println("找到食材: " + ingredient.getName() +
+                ", ingredientId: " + ingredient.getIngredientId());
+
         ingredient.setMainCategory(category);
         ingredientRepository.save(ingredient);
 
-        // 更新入库时间
+        System.out.println("更新了食材分类: " + category);
+
+        // 更新入库时间和自定义保质期
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         Date date = sdf.parse(storageDate);
         Timestamp timestamp = new Timestamp(date.getTime());
 
-        userIngredientRepository.updateStorageTime(userId, ingredientName, timestamp);
+        // 查找用户食材记录
+        UserIngredient userIngredient = userIngredientRepository
+                .findByUserIdAndIngredientId(userId, ingredient.getIngredientId())
+                .orElseThrow(() -> new RuntimeException("用户食材记录不存在"));
+
+        System.out.println("找到用户食材记录 - stockId: " + userIngredient.getStockId() +
+                ", 当前storageTime: " + userIngredient.getStorageTime() +
+                ", 当前customExpiryDays: " + userIngredient.getCustomExpiryDays());
+
+        userIngredient.setStorageTime(timestamp);
+        userIngredient.setCustomExpiryDays(customExpiryDays);
+        UserIngredient saved = userIngredientRepository.save(userIngredient);
+
+        System.out.println("更新后的用户食材记录 - storageTime: " + saved.getStorageTime() +
+                ", customExpiryDays: " + saved.getCustomExpiryDays());
     }
 }

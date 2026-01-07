@@ -217,6 +217,135 @@ public class RecipeService {
     }
 
     /**
+     * 获取包含收藏状态的菜谱列表（分页）
+     */
+    public Map<String, Object> getRecipesByTagAndPageWithFavoriteStatus(Integer tagId, int page, int pageSize, Integer userId) {
+        // 计算偏移量
+        int offset = (page - 1) * pageSize;
+
+        List<Map<String, Object>> recipesWithFavorite;
+        long total;
+
+        // 根据 tagId 进行过滤
+        if (tagId == 0) {
+            // 全部菜谱，包含收藏状态
+            recipesWithFavorite = recipeRepository.findAllWithFavoriteStatus(userId, offset, pageSize);
+            total = recipeRepository.countAll();
+        } else {
+            // 按标签查询，包含收藏状态
+            recipesWithFavorite = recipeRepository.findByTagIdWithFavoriteStatus(tagId, userId, offset, pageSize);
+            total = recipeRepository.countByTagId(tagId);
+        }
+
+        // 转换数据结构，确保返回格式统一
+        List<Map<String, Object>> resultRecipes = new ArrayList<>();
+        for (Map<String, Object> recipeMap : recipesWithFavorite) {
+
+            // 复制所有字段
+            Map<String, Object> formattedRecipe = new HashMap<>(recipeMap);
+
+            // 确保 isFavorite 字段存在且为 Boolean 类型
+            if (!formattedRecipe.containsKey("isFavorite")) {
+                formattedRecipe.put("isFavorite", false);
+            } else if (formattedRecipe.get("isFavorite") instanceof Number favoriteValue) {
+                // 如果数据库返回的是数字类型，转换为 Boolean
+                formattedRecipe.put("isFavorite", favoriteValue.intValue() == 1);
+            }
+
+            resultRecipes.add(formattedRecipe);
+        }
+
+        // 计算总页数
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+
+        // 返回结果和分页信息
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", resultRecipes);
+        result.put("currentPage", page);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+
+        return result;
+    }
+
+    /**
+     * 获取带推荐排序和收藏状态的菜谱列表
+     */
+    public Map<String, Object> getRecipesByTagAndPageWithRankingAndFavorite(Integer tagId, int page, int pageSize, Integer userId) {
+        int offset = (page - 1) * pageSize;
+
+        List<Map<String, Object>> recipesWithFavorite;
+        long total;
+
+        if (tagId == 0) {
+            recipesWithFavorite = recipeRepository.findAllWithFavoriteStatus(userId, offset, pageSize);
+            total = recipeRepository.countAll();
+        } else {
+            recipesWithFavorite = recipeRepository.findByTagIdWithFavoriteStatus(tagId, userId, offset, pageSize);
+            total = recipeRepository.countByTagId(tagId);
+        }
+
+        // 从Map中提取Recipe对象
+        List<Recipe> recipes = new ArrayList<>();
+        Map<Integer, Boolean> favoriteStatusMap = new HashMap<>();
+
+        for (Map<String, Object> recipeMap : recipesWithFavorite) {
+            Recipe recipe = new Recipe();
+            recipe.setRecipeId((Integer) recipeMap.get("recipe_id"));
+            recipe.setName((String) recipeMap.get("name"));
+            recipe.setImageUrl((String) recipeMap.get("image_url"));
+            recipe.setTaste((String) recipeMap.get("taste"));
+            recipe.setMethod((String) recipeMap.get("method"));
+            recipe.setTime((String) recipeMap.get("time"));
+            recipe.setDifficulty((String) recipeMap.get("difficulty"));
+            recipe.setNeeds((String) recipeMap.get("needs"));
+            recipe.setSteps((String) recipeMap.get("steps"));
+            recipe.setPopularity((Integer) recipeMap.get("popularity"));
+
+            recipes.add(recipe);
+
+            // 保存收藏状态
+            Boolean isFavorite = recipeMap.get("isFavorite") instanceof Number
+                    ? ((Number) recipeMap.get("isFavorite")).intValue() == 1
+                    : (Boolean) recipeMap.get("isFavorite");
+            favoriteStatusMap.put(recipe.getRecipeId(), isFavorite);
+        }
+
+        // 应用推荐排序
+        recipes = sortRecipesByFeatures(recipes, userId);
+
+        // 重新组装带收藏状态的结果
+        List<Map<String, Object>> resultRecipes = new ArrayList<>();
+        for (Recipe recipe : recipes) {
+            Map<String, Object> recipeMap = new HashMap<>();
+            recipeMap.put("recipe_id", recipe.getRecipeId());
+            recipeMap.put("name", recipe.getName());
+            recipeMap.put("image_url", recipe.getImageUrl());
+            recipeMap.put("taste", recipe.getTaste());
+            recipeMap.put("method", recipe.getMethod());
+            recipeMap.put("time", recipe.getTime());
+            recipeMap.put("difficulty", recipe.getDifficulty());
+            recipeMap.put("needs", recipe.getNeeds());
+            recipeMap.put("steps", recipe.getSteps());
+            recipeMap.put("popularity", recipe.getPopularity());
+            recipeMap.put("isFavorite", favoriteStatusMap.getOrDefault(recipe.getRecipeId(), false));
+
+            resultRecipes.add(recipeMap);
+        }
+
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", resultRecipes);
+        result.put("currentPage", page);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+
+        return result;
+    }
+
+    /**
      * 对候选菜谱计算特征并排序
      * @param recipes 候选菜谱列表
      * @param userId 当前用户ID
@@ -474,5 +603,31 @@ public class RecipeService {
     @Transactional
     public void deleteHistory(Integer historyId) {
         historyRepository.deleteById(historyId);
+    }
+
+    /**
+     * 获取菜谱详情（包含收藏状态）
+     */
+    public Map<String, Object> getRecipeDetailWithFavoriteStatus(Integer recipeId, Integer userId) {
+        if (userId == null) {
+            userId = 0; // 未登录用户
+        }
+
+        Map<String, Object> recipeMap = recipeRepository.findByIdWithFavoriteStatus(recipeId, userId);
+
+        if (recipeMap == null) {
+            return null;
+        }
+
+        // 确保 isFavorite 字段存在
+        if (!recipeMap.containsKey("isFavorite")) {
+            recipeMap.put("isFavorite", false);
+        }
+
+        return recipeMap;
+    }
+    /*检查收藏状态*/
+    public boolean checkIfRecipeIsFavorite(Integer userId, Integer recipeId) {
+        return favoriteRepository.existsByUserIdAndRecipeId(userId, recipeId);
     }
 }

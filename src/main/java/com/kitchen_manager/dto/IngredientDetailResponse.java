@@ -11,5 +11,6 @@ public class IngredientDetailResponse {
     private String benefit;
     private String imageUrl;
     private String category;
+    private Integer expiryDays; // 新增：保质期天数
 }
 

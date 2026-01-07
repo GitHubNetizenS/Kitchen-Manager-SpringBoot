@@ -21,32 +21,20 @@ public class RecipeController {
     private final RecipeIngredientRepository recipeIngredientRepository;
 
     /**
-     * 获取菜谱列表
-     * GET /api/recipes
-     */
-    @GetMapping("/recipes")
-    public ApiResponse<List<Recipe>> getRecipes(
-            @RequestParam(value = "page", defaultValue = "1") int page,
-            @RequestParam(value = "pageSize", defaultValue = "100") int pageSize) {
-
-        try {
-            List<Recipe> recipes = recipeService.getAllRecipes();
-            return ApiResponse.success(recipes);
-        } catch (Exception e) {
-            return ApiResponse.error("获取菜谱列表失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 获取菜谱详情
+     * 获取菜谱详情（包含收藏状态）
      * GET /api/recipedetail
      */
     @GetMapping("/recipedetail")
-    public ApiResponse<Recipe> getRecipeDetail(
-            @RequestParam("recipe_id") Integer recipeId) {
+    public ApiResponse<Map<String, Object>> getRecipeDetail(
+            @RequestParam("recipe_id") Integer recipeId,
+            @RequestParam(value = "user_id", required = false) Integer userId) {
 
         try {
-            Recipe recipe = recipeService.getRecipeDetail(recipeId);
+            if (userId == null) {
+                userId = 0; // 未登录用户
+            }
+
+            Map<String, Object> recipe = recipeService.getRecipeDetailWithFavoriteStatus(recipeId, userId);
             if (recipe == null) {
                 return ApiResponse.error(404, "菜谱不存在");
             }
@@ -95,7 +83,7 @@ public class RecipeController {
     }
 
     /**
-     * 按标签获取菜谱列表
+     * 按标签获取菜谱列表（包含用户收藏状态）
      * GET /api/recipelist
      */
     @GetMapping("/recipelist")
@@ -103,18 +91,22 @@ public class RecipeController {
             @RequestParam(value = "tag_id", defaultValue = "0") Integer tagId,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "page_size", defaultValue = "20") int pageSize,
-            @RequestParam(value = "user_id") Integer userId) {
-
-        if(null==userId || 0==userId) {
-            return ApiResponse.error("用户未登录，无法获取个性化推荐");
-        }
+            @RequestParam(value = "user_id", required = false) Integer userId) {
 
         try {
-            Map<String, Object> result = recipeService.getRecipesByTagAndPage(tagId, page, pageSize, userId);
+            Map<String, Object> result;
+
+            if (userId != null && userId > 0) {
+                // 登录用户获取带推荐排序和收藏状态的列表
+                result = recipeService.getRecipesByTagAndPageWithRankingAndFavorite(tagId, page, pageSize, userId);
+            } else {
+                // 未登录用户获取普通列表（无收藏状态）
+                result = recipeService.getRecipesByTagAndPageWithFavoriteStatus(tagId, page, pageSize, 0);
+            }
 
             return ApiResponse.success(result);
         } catch (Exception e) {
-
+            e.printStackTrace();
             return ApiResponse.error("获取菜谱列表失败: " + e.getMessage());
         }
     }
