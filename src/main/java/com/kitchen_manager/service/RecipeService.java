@@ -279,10 +279,10 @@ public class RecipeService {
         long total;
 
         if (tagId == 0) {
-            recipesWithFavorite = recipeRepository.findAllWithFavoriteStatus(userId, offset, pageSize);
+            recipesWithFavorite = recipeRepository.findAllForCandidateSetWithFavoriteStatus(userId, offset, pageSize);
             total = recipeRepository.countAll();
         } else {
-            recipesWithFavorite = recipeRepository.findByTagIdWithFavoriteStatus(tagId, userId, offset, pageSize);
+            recipesWithFavorite = recipeRepository.findByTagIdForCandidateSetWithFavoriteStatus(tagId, userId, offset, pageSize);
             total = recipeRepository.countByTagId(tagId);
         }
 

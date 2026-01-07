@@ -184,6 +184,64 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
                                             @Param("limit") int limit);
 
     /**
+     * 获取菜谱候选集（带收藏状态）
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findAllForCandidateSetWithFavoriteStatus(@Param("userId") Integer userId,
+                                                                       @Param("offset") int offset,
+                                                                       @Param("limit") int limit);
+
+    /**
+     * 按标签ID获取菜谱候选集（带收藏状态）
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "WHERE r.recipe_id IN ( " +
+            "   SELECT rt.recipe_id " +
+            "   FROM recipe_tag rt " +
+            "   WHERE rt.tag_id IN (1, 2, 3) " +
+            "   GROUP BY rt.recipe_id " +
+            "   HAVING MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+            "          MAX(IF(rt.tag_id = 1, rt.match_amount, -1)) " +
+            "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+            "          MAX(IF(rt.tag_id = 2, rt.match_amount, -1)) " +
+            "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+            "          MAX(IF(rt.tag_id = 3, rt.match_amount, -1)) " +
+            ") " +
+            "ORDER BY r.popularity DESC " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findByTagIdForCandidateSetWithFavoriteStatus(@Param("tagId") Integer tagId,
+                                                                           @Param("userId") Integer userId,
+                                                                           @Param("offset") int offset,
+                                                                           @Param("limit") int limit);
+
+    /**
      * 根据菜谱ID查询（带收藏状态）- 用于单个菜谱查询
      */
     @Query(value = "SELECT " +
