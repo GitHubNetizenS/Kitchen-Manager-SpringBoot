@@ -17,6 +17,8 @@ public class RecipeService {
     private final RecipeRepository recipeRepository;
     private final UserFavoriteRecipeRepository favoriteRepository;
     private final UserHistoryRepository historyRepository;
+    private final UserIngredientRepository userIngredientRepository;
+    private final RecipeIngredientRepository recipeIngredientRepository;
 
     public Recipe getRecipeDetail(Integer recipeId) {
         return recipeRepository.findById(recipeId).orElse(null);
@@ -350,8 +352,202 @@ public class RecipeService {
 
         return recipeMap;
     }
+
     /*检查收藏状态*/
     public boolean checkIfRecipeIsFavorite(Integer userId, Integer recipeId) {
         return favoriteRepository.existsByUserIdAndRecipeId(userId, recipeId);
+    }
+
+    /**
+     * 获取过滤后的菜谱（包含收藏状态）
+     * 支持口味多选：单选时包含该口味的所有菜谱，多选时包含所有选中口味的菜谱
+     */
+    public Map<String, Object> getFilteredRecipesWithFavoriteStatus(
+            String taste, String method, String difficulty, String sort,
+            Integer userId, int page, int pageSize) {
+
+        try {
+            if (userId == null) {
+                userId = 0;
+            }
+
+            // 计算偏移量
+            int offset = (page - 1) * pageSize;
+
+            // 先获取过滤后的recipeIds
+            List<Integer> filteredRecipeIds = recipeRepository.findFilteredRecipeIds(
+                    taste, method, difficulty, offset, pageSize);
+
+            // 获取总数
+            long total = recipeRepository.countFilteredRecipes(taste, method, difficulty);
+
+            if (filteredRecipeIds.isEmpty()) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("recipes", new ArrayList<>());
+                result.put("currentPage", page);
+                result.put("pageSize", pageSize);
+                result.put("total", total);
+                result.put("totalPages", (int) Math.ceil((double) total / pageSize));
+                return result;
+            }
+
+            // 根据sort排序recipeIds
+            List<Integer> sortedRecipeIds = sortRecipeIds(filteredRecipeIds, sort, userId);
+
+            // 获取菜谱详情（带收藏状态）
+            List<Map<String, Object>> recipes = recipeRepository.findByIdsWithFavoriteStatus(sortedRecipeIds, userId);
+
+            // 格式化isFavorite为boolean
+            List<Map<String, Object>> formattedRecipes = new ArrayList<>();
+            for (Map<String, Object> recipe : recipes) {
+                Map<String, Object> mutableRecipe = new HashMap<>(recipe);
+                Object favoriteValue = mutableRecipe.get("isFavorite");
+                boolean isFavorite = false;
+                if (favoriteValue != null) {
+                    if (favoriteValue instanceof Number) {
+                        isFavorite = ((Number) favoriteValue).intValue() == 1;
+                    } else if (favoriteValue instanceof Boolean) {
+                        isFavorite = (Boolean) favoriteValue;
+                    }
+                }
+                mutableRecipe.put("isFavorite", isFavorite);
+                formattedRecipes.add(mutableRecipe);
+            }
+
+            int totalPages = (int) Math.ceil((double) total / pageSize);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("recipes", formattedRecipes);
+            result.put("currentPage", page);
+            result.put("pageSize", pageSize);
+            result.put("total", total);
+            result.put("totalPages", totalPages);
+
+            return result;
+
+        } catch (Exception e) {
+            // 如果主方法失败，尝试使用备用方法
+            try {
+                return getFilteredRecipesWithFavoriteStatusBackup(
+                        taste, method, difficulty, sort, userId, page, pageSize);
+            } catch (Exception ex) {
+                e.printStackTrace();
+                throw new RuntimeException("获取过滤菜谱失败: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 备用方法：使用简单的查询逻辑
+     */
+    private Map<String, Object> getFilteredRecipesWithFavoriteStatusBackup(
+            String taste, String method, String difficulty, String sort,
+            Integer userId, int page, int pageSize) {
+
+        // 计算偏移量
+        int offset = (page - 1) * pageSize;
+
+        // 使用备用查询方法
+        List<Integer> filteredRecipeIds = recipeRepository.findFilteredRecipeIdsSimple(
+                taste, method, difficulty, offset, pageSize);
+
+        // 获取总数
+        long total = recipeRepository.countFilteredRecipesSimple(
+                taste, method, difficulty);
+
+        if (filteredRecipeIds.isEmpty()) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("recipes", new ArrayList<>());
+            result.put("currentPage", page);
+            result.put("pageSize", pageSize);
+            result.put("total", total);
+            result.put("totalPages", (int) Math.ceil((double) total / pageSize));
+            return result;
+        }
+
+        // 根据sort排序recipeIds
+        List<Integer> sortedRecipeIds = sortRecipeIds(filteredRecipeIds, sort, userId);
+
+        // 获取菜谱详情（带收藏状态）
+        List<Map<String, Object>> recipes = recipeRepository.findByIdsWithFavoriteStatus(sortedRecipeIds, userId);
+
+        // 格式化isFavorite为boolean
+        List<Map<String, Object>> formattedRecipes = new ArrayList<>();
+        for (Map<String, Object> recipe : recipes) {
+            Map<String, Object> mutableRecipe = new HashMap<>(recipe);
+            Object favoriteValue = mutableRecipe.get("isFavorite");
+            boolean isFavorite = false;
+            if (favoriteValue != null) {
+                if (favoriteValue instanceof Number) {
+                    isFavorite = ((Number) favoriteValue).intValue() == 1;
+                } else if (favoriteValue instanceof Boolean) {
+                    isFavorite = (Boolean) favoriteValue;
+                }
+            }
+            mutableRecipe.put("isFavorite", isFavorite);
+            formattedRecipes.add(mutableRecipe);
+        }
+
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", formattedRecipes);
+        result.put("currentPage", page);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+
+        return result;
+    }
+
+    /**
+     * 排序recipeIds
+     */
+    private List<Integer> sortRecipeIds(List<Integer> recipeIds, String sort, Integer userId) {
+        if ("tag_match".equals(sort)) {
+            // 标签匹配：按用户标签匹配值降序
+            List<Recipe> sortedRecipes = recipeRepository.findByRecipeIdsOrderByMatchValue(recipeIds, userId);
+            return sortedRecipes.stream().map(Recipe::getRecipeId).collect(Collectors.toList());
+        } else if ("ingredient_match".equals(sort)) {
+            // 原料匹配：按用户库存匹配数降序
+            return recipeIds.stream()
+                    .sorted(Comparator.comparingInt(id -> -getMatchingIngredientCount(userId, id)))
+                    .collect(Collectors.toList());
+        } else {
+            // 综合：按popularity降序
+            List<Recipe> sortedRecipes = recipeRepository.findByIdsOrderByPopularity(recipeIds);
+            return sortedRecipes.stream().map(Recipe::getRecipeId).collect(Collectors.toList());
+        }
+    }
+
+    /**
+     * 获取用户库存与菜谱食材的匹配数量
+     */
+    private int getMatchingIngredientCount(Integer userId, Integer recipeId) {
+        try {
+            // 获取菜谱需要的食材ID列表
+            List<Integer> recipeIngredientIds = recipeIngredientRepository.findIngredientIdsByRecipeId(recipeId);
+
+            if (recipeIngredientIds.isEmpty()) {
+                return 0;
+            }
+
+            // 获取用户拥有的食材ID列表
+            List<Integer> userIngredientIds = userIngredientRepository.findIngredientIdsByUserId(userId);
+
+            if (userIngredientIds.isEmpty()) {
+                return 0;
+            }
+
+            // 计算交集数量
+            Set<Integer> recipeSet = new HashSet<>(recipeIngredientIds);
+            Set<Integer> userSet = new HashSet<>(userIngredientIds);
+            recipeSet.retainAll(userSet); // 求交集
+
+            return recipeSet.size();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0;
+        }
     }
 }

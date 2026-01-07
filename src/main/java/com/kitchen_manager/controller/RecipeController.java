@@ -20,6 +20,30 @@ public class RecipeController {
     private final IngredientRepository ingredientRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
 
+    // 在类中添加新方法
+    @GetMapping("/recipes/filter")
+    public ApiResponse<Map<String, Object>> getFilteredRecipes(
+            @RequestParam(value = "taste", required = false, defaultValue = "") String taste,
+            @RequestParam(value = "method", required = false, defaultValue = "") String method,
+            @RequestParam(value = "difficulty", required = false, defaultValue = "") String difficulty,
+            @RequestParam(value = "sort", defaultValue = "all") String sort,
+            @RequestParam(value = "user_id", required = false) Integer userId,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "page_size", defaultValue = "20") int pageSize) {
+
+        try {
+            if (userId == null) {
+                userId = 0;
+            }
+            Map<String, Object> result = recipeService.getFilteredRecipesWithFavoriteStatus(
+                    taste, method, difficulty, sort, userId, page, pageSize);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("获取过滤菜谱失败: " + e.getMessage());
+        }
+    }
+
     /**
      * 获取菜谱详情（包含收藏状态）
      * GET /api/recipedetail

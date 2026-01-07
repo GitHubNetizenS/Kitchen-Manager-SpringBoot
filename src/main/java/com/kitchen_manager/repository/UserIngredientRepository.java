@@ -37,4 +37,6 @@ public interface UserIngredientRepository extends JpaRepository<UserIngredient, 
     @Query("SELECT ui FROM UserIngredient ui WHERE ui.userId = :userId AND ui.ingredientId = :ingredientId")
     Optional<UserIngredient> findByUserIdAndIngredientId(@Param("userId") Integer userId,
                                                          @Param("ingredientId") Integer ingredientId);
+
+    List<Integer> findIngredientIdsByUserId(Integer userId);
 }
