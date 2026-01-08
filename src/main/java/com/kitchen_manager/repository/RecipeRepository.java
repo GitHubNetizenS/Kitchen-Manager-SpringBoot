@@ -186,7 +186,7 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
     /**
      * 获取菜谱候选集（带收藏状态和购物车状态）
      */
-    @Query(value = "SELECT " +
+    @Query(value = "SELECT DISTINCT " +
             "r.recipe_id, " +
             "r.name, " +
             "r.image_url, " +
@@ -507,8 +507,8 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
     /**
      * 按标签查询菜谱（带收藏状态和购物车状态）- 用于推荐列表
      */
-    @Query(value = "SELECT " +
-            "r.recipe_id, " +
+    @Query(value = "SELECT DISTINCT " +
+            ".recipe_id, " +
             "r.name, " +
             "r.image_url, " +
             "r.taste, " +
