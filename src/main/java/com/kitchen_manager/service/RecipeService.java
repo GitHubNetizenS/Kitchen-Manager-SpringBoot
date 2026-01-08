@@ -23,6 +23,7 @@ public class RecipeService {
     private final UserIngredientRepository userIngredientRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
     private final IngredientIdfRepository ingredientIdfRepository;
+    private final UserShoppingListRepository shoppingListRepository;
 
     public Recipe getRecipeDetail(Integer recipeId) {
         return recipeRepository.findById(recipeId).orElse(null);
@@ -822,6 +823,68 @@ public class RecipeService {
         } catch (Exception e) {
             e.printStackTrace();
             return 0;
+        }
+    }
+
+    /**
+     * 将菜谱所需食材加入购物车
+     */
+    @Transactional
+    public void addToShoppingCart(Integer userId, Integer recipeId) {
+        // 检查是否已存在
+        boolean alreadyExists = shoppingListRepository.existsByUserIdAndRecipeId(userId, recipeId);
+
+        if (alreadyExists) {
+            // 如果已存在，移除（实现切换效果）
+            shoppingListRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+            return; // 这里可以返回特定信息，或者让前端根据状态判断
+        }
+
+        // 如果不存在，添加
+        int addedCount = shoppingListRepository.addRecipeIngredientsToCart(userId, recipeId);
+
+        if (addedCount == 0) {
+            throw new RuntimeException("该菜谱没有食材可添加");
+        }
+    }
+
+    /**
+     * 从购物车移除菜谱
+     */
+    @Transactional
+    public void removeFromShoppingCart(Integer userId, Integer recipeId) {
+        shoppingListRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+    }
+
+    /**
+     * 检查菜谱是否在购物车中
+     */
+    public boolean isRecipeInCart(Integer userId, Integer recipeId) {
+        return shoppingListRepository.existsByUserIdAndRecipeId(userId, recipeId);
+    }
+
+    /**
+     * 获取用户在购物车中的菜谱ID列表
+     */
+    public List<Integer> getShoppingCartRecipeIds(Integer userId) {
+        return shoppingListRepository.findRecipeIdsByUserId(userId);
+    }
+
+    /**
+     * 切换菜谱的购物车状态（添加/移除）
+     */
+    @Transactional
+    public void toggleShoppingCart(Integer userId, Integer recipeId) {
+        if (shoppingListRepository.existsByUserIdAndRecipeId(userId, recipeId)) {
+            // 如果已经存在，移除购物车
+            shoppingListRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+        } else {
+            // 如果不存在，加入购物车
+            int addedCount = shoppingListRepository.addRecipeIngredientsToCart(userId, recipeId);
+
+            if (addedCount == 0) {
+                throw new RuntimeException("该菜谱没有食材可添加");
+            }
         }
     }
 }

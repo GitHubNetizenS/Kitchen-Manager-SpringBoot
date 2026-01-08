@@ -473,4 +473,59 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             @Param("tasteConditions") String tasteConditions,
             @Param("method") String method,
             @Param("difficulty") String difficulty);
+
+    /**
+     * 查询所有菜谱（带收藏状态和购物车状态）
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
+            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
+            "ORDER BY r.popularity DESC " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findAllWithFavoriteAndCartStatus(
+            @Param("userId") Integer userId,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 按标签查询菜谱（带收藏状态和购物车状态）
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
+            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
+            "FROM recipe r " +
+            "INNER JOIN recipe_tag rt ON r.recipe_id = rt.recipe_id " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
+            "WHERE rt.tag_id = :tagId " +
+            "ORDER BY r.popularity DESC " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findByTagIdWithFavoriteAndCartStatus(
+            @Param("tagId") Integer tagId,
+            @Param("userId") Integer userId,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
 }
