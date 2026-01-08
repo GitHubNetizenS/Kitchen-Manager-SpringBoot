@@ -2,6 +2,7 @@ package com.kitchen_manager.service;
 
 import com.kitchen_manager.common.LightGBMRankPredictor;
 import com.kitchen_manager.dto.HistoryRecipeDTO;
+import com.kitchen_manager.dto.RecipeWithStatusDTO;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class RecipeService {
     private final UserIngredientRepository userIngredientRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
     private final IngredientIdfRepository ingredientIdfRepository;
+    private final UserShoppingListRepository shoppingListRepository;
 
     private final ElasticsearchSyncService elasticsearchSyncService;
 
@@ -198,43 +200,6 @@ public class RecipeService {
     }
 
     /**
-     * 通过标签获取菜谱的分页列表
-     * @param tagId 标签ID
-     * @param page 分页数
-     * @param pageSize 页面大小
-     * @return 返回一个映射，映射的键值对包括候选菜谱列表、当前页面、页面大小、数据总数和页面总数
-     */
-    public Map<String, Object> getRecipesByTagAndPage(Integer tagId, int page, int pageSize, Integer userId) {
-        // 计算偏移量。
-        long            total;
-        List<Recipe>    recipes;
-        int             offset = (page-1) * pageSize;
-
-        // 根据tagId获取无排序的候选集。
-        if(0==tagId) {
-            recipes = recipeRepository.findAllForCandidateSet(offset, pageSize);
-            total = recipeRepository.countAll();
-        } else {
-            recipes = recipeRepository.findByTagIdForCandidateSet(tagId, offset, pageSize);
-            total = recipeRepository.countByTagId(tagId);
-        }
-        recipes = sortRecipesByFeatures(recipes, userId);
-
-        // 计算总页数。
-        int totalPages = (int)Math.ceil((double)total / pageSize);
-        // 返回结果和分页信息。
-        Map<String, Object> result = new HashMap<>();
-
-        result.put("recipes", recipes);
-        result.put("currentPage", page);
-        result.put("pageSize", pageSize);
-        result.put("total", total);
-        result.put("totalPages", totalPages);
-
-        return result;
-    }
-
-    /**
      * 获取包含收藏状态的菜谱列表（分页）
      */
     public Map<String, Object> getRecipesByTagAndPageWithFavoriteStatus(Integer tagId, int page, int pageSize, Integer userId) {
@@ -288,7 +253,7 @@ public class RecipeService {
     }
 
     /**
-     * 获取带推荐排序和收藏状态的菜谱列表
+     * 获取带推荐排序、收藏状态和购物车状态的菜谱列表
      */
     public Map<String, Object> getRecipesByTagAndPageWithRankingAndFavorite(Integer tagId, int page, int pageSize, Integer userId) {
         int offset = (page - 1) * pageSize;
@@ -307,6 +272,7 @@ public class RecipeService {
         // 从Map中提取Recipe对象
         List<Recipe> recipes = new ArrayList<>();
         Map<Integer, Boolean> favoriteStatusMap = new HashMap<>();
+        Map<Integer, Boolean> cartStatusMap = new HashMap<>();
 
         for (Map<String, Object> recipeMap : recipesWithFavorite) {
             Recipe recipe = new Recipe();
@@ -328,12 +294,24 @@ public class RecipeService {
                     ? ((Number) recipeMap.get("isFavorite")).intValue() == 1
                     : (Boolean) recipeMap.get("isFavorite");
             favoriteStatusMap.put(recipe.getRecipeId(), isFavorite);
+
+            // 保存购物车状态 - 关键修复
+            Boolean inShoppingCart = false;
+            if (recipeMap.containsKey("inShoppingCart")) {
+                Object cartObj = recipeMap.get("inShoppingCart");
+                if (cartObj instanceof Number) {
+                    inShoppingCart = ((Number) cartObj).intValue() == 1;
+                } else if (cartObj instanceof Boolean) {
+                    inShoppingCart = (Boolean) cartObj;
+                }
+            }
+            cartStatusMap.put(recipe.getRecipeId(), inShoppingCart);
         }
 
         // 应用推荐排序
         recipes = sortRecipesByFeatures(recipes, userId);
 
-        // 重新组装带收藏状态的结果
+        // 重新组装带收藏状态和购物车状态的结果
         List<Map<String, Object>> resultRecipes = new ArrayList<>();
         for (Recipe recipe : recipes) {
             Map<String, Object> recipeMap = new HashMap<>();
@@ -348,6 +326,8 @@ public class RecipeService {
             recipeMap.put("steps", recipe.getSteps());
             recipeMap.put("popularity", recipe.getPopularity());
             recipeMap.put("isFavorite", favoriteStatusMap.getOrDefault(recipe.getRecipeId(), false));
+            // 关键：添加购物车状态
+            recipeMap.put("inShoppingCart", cartStatusMap.getOrDefault(recipe.getRecipeId(), false));
 
             resultRecipes.add(recipeMap);
         }
@@ -842,4 +822,165 @@ public class RecipeService {
             return 0;
         }
     }
+
+    /**
+     * 将菜谱所需食材加入购物车
+     */
+    @Transactional
+    public void addToShoppingCart(Integer userId, Integer recipeId) {
+        // 检查是否已存在
+        boolean alreadyExists = shoppingListRepository.existsByUserIdAndRecipeId(userId, recipeId);
+
+        if (alreadyExists) {
+            // 如果已存在，移除（实现切换效果）
+            shoppingListRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+            return; // 这里可以返回特定信息，或者让前端根据状态判断
+        }
+
+        // 如果不存在，添加
+        int addedCount = shoppingListRepository.addRecipeIngredientsToCart(userId, recipeId);
+
+        if (addedCount == 0) {
+            throw new RuntimeException("该菜谱没有食材可添加");
+        }
+    }
+
+    /**
+     * 从购物车移除菜谱
+     */
+    @Transactional
+    public void removeFromShoppingCart(Integer userId, Integer recipeId) {
+        shoppingListRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+    }
+
+    /**
+     * 检查菜谱是否在购物车中
+     */
+    public boolean isRecipeInCart(Integer userId, Integer recipeId) {
+        return shoppingListRepository.existsByUserIdAndRecipeId(userId, recipeId);
+    }
+
+    /**
+     * 获取用户在购物车中的菜谱ID列表
+     */
+    public List<Integer> getShoppingCartRecipeIds(Integer userId) {
+        return shoppingListRepository.findRecipeIdsByUserId(userId);
+    }
+
+    /**
+     * 切换菜谱的购物车状态（添加/移除）
+     */
+    @Transactional
+    public void toggleShoppingCart(Integer userId, Integer recipeId) {
+        if (shoppingListRepository.existsByUserIdAndRecipeId(userId, recipeId)) {
+            // 如果已经存在，移除购物车
+            shoppingListRepository.deleteByUserIdAndRecipeId(userId, recipeId);
+        } else {
+            // 如果不存在，加入购物车
+            int addedCount = shoppingListRepository.addRecipeIngredientsToCart(userId, recipeId);
+
+            if (addedCount == 0) {
+                throw new RuntimeException("该菜谱没有食材可添加");
+            }
+        }
+    }
+
+    /**
+     * 获取带收藏和购物车状态的菜谱列表
+     */
+    public Map<String, Object> getRecipesByTagAndPageWithFavoriteAndCartStatus(Integer tagId, int page, int pageSize, Integer userId) {
+        int offset = (page - 1) * pageSize;
+
+        List<Map<String, Object>> recipesWithStatus;
+        long total;
+
+        if (tagId == 0) {
+            recipesWithStatus = recipeRepository.findAllWithFavoriteAndCartStatus(userId, offset, pageSize);
+            total = recipeRepository.countAll();
+        } else {
+            recipesWithStatus = recipeRepository.findByTagIdWithFavoriteAndCartStatus(tagId, userId, offset, pageSize);
+            total = recipeRepository.countByTagId(tagId);
+        }
+
+        // 转换为DTO列表
+        List<RecipeWithStatusDTO> resultRecipes = new ArrayList<>();
+        for (Map<String, Object> recipeMap : recipesWithStatus) {
+            RecipeWithStatusDTO dto = new RecipeWithStatusDTO();
+
+            // 设置基本字段
+            if (recipeMap.containsKey("recipe_id")) {
+                dto.setRecipeId(((Number) recipeMap.get("recipe_id")).intValue());
+            }
+            if (recipeMap.containsKey("name")) {
+                dto.setName((String) recipeMap.get("name"));
+            }
+            if (recipeMap.containsKey("image_url")) {
+                dto.setImageUrl((String) recipeMap.get("image_url"));
+            }
+            if (recipeMap.containsKey("taste")) {
+                dto.setTaste((String) recipeMap.get("taste"));
+            }
+            if (recipeMap.containsKey("method")) {
+                dto.setMethod((String) recipeMap.get("method"));
+            }
+            if (recipeMap.containsKey("time")) {
+                dto.setTime((String) recipeMap.get("time"));
+            }
+            if (recipeMap.containsKey("difficulty")) {
+                dto.setDifficulty((String) recipeMap.get("difficulty"));
+            }
+            if (recipeMap.containsKey("needs")) {
+                dto.setNeeds((String) recipeMap.get("needs"));
+            }
+            if (recipeMap.containsKey("steps")) {
+                dto.setSteps((String) recipeMap.get("steps"));
+            }
+            if (recipeMap.containsKey("popularity")) {
+                dto.setPopularity(((Number) recipeMap.get("popularity")).intValue());
+            }
+
+            // 设置状态字段
+            if (recipeMap.containsKey("isFavorite")) {
+                Object favoriteObj = recipeMap.get("isFavorite");
+                dto.setIsFavorite(parseBooleanValue(favoriteObj));
+            }
+
+            if (recipeMap.containsKey("inShoppingCart")) {
+                Object cartObj = recipeMap.get("inShoppingCart");
+                dto.setInShoppingCart(parseBooleanValue(cartObj));
+            }
+
+            resultRecipes.add(dto);
+        }
+
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", resultRecipes);
+        result.put("currentPage", page);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+
+        return result;
+    }
+
+    /**
+     * 解析布尔值（支持多种类型）
+     */
+    private Boolean parseBooleanValue(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        if (obj instanceof Boolean) {
+            return (Boolean) obj;
+        } else if (obj instanceof Number) {
+            return ((Number) obj).intValue() == 1;
+        } else if (obj instanceof String) {
+            String str = ((String) obj).trim().toLowerCase();
+            return str.equals("true") || str.equals("1") || str.equals("y");
+        }
+        return false;
+    }
+
+
 }
