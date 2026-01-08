@@ -184,7 +184,7 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
                                             @Param("limit") int limit);
 
     /**
-     * 获取菜谱候选集（带收藏状态）
+     * 获取菜谱候选集（带收藏状态和购物车状态）
      */
     @Query(value = "SELECT " +
             "r.recipe_id, " +
@@ -197,16 +197,18 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             "r.needs, " +
             "r.steps, " +
             "r.popularity, " +
-            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
+            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
             "FROM recipe r " +
             "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
             "LIMIT :limit OFFSET :offset", nativeQuery = true)
     List<Map<String, Object>> findAllForCandidateSetWithFavoriteStatus(@Param("userId") Integer userId,
                                                                        @Param("offset") int offset,
                                                                        @Param("limit") int limit);
 
     /**
-     * 按标签ID获取菜谱候选集（带收藏状态）
+     * 按标签ID获取菜谱候选集（带收藏状态和购物车状态）
      */
     @Query(value = "SELECT " +
             "r.recipe_id, " +
@@ -219,9 +221,11 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             "r.needs, " +
             "r.steps, " +
             "r.popularity, " +
-            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
+            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
             "FROM recipe r " +
             "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
             "WHERE r.recipe_id IN ( " +
             "   SELECT rt.recipe_id " +
             "   FROM recipe_tag rt " +
@@ -475,7 +479,7 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             @Param("difficulty") String difficulty);
 
     /**
-     * 查询所有菜谱（带收藏状态和购物车状态）
+     * 查询所有菜谱（带收藏状态和购物车状态）- 用于全部标签
      */
     @Query(value = "SELECT " +
             "r.recipe_id, " +
@@ -501,7 +505,7 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             @Param("limit") int limit);
 
     /**
-     * 按标签查询菜谱（带收藏状态和购物车状态）
+     * 按标签查询菜谱（带收藏状态和购物车状态）- 用于推荐列表
      */
     @Query(value = "SELECT " +
             "r.recipe_id, " +
@@ -524,6 +528,45 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             "ORDER BY r.popularity DESC " +
             "LIMIT :limit OFFSET :offset", nativeQuery = true)
     List<Map<String, Object>> findByTagIdWithFavoriteAndCartStatus(
+            @Param("tagId") Integer tagId,
+            @Param("userId") Integer userId,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    /**
+     * 按标签获取菜谱候选集（带收藏状态和购物车状态）- 用于分页推荐
+     */
+    @Query(value = "SELECT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
+            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
+            "WHERE r.recipe_id IN ( " +
+            "   SELECT rt.recipe_id " +
+            "   FROM recipe_tag rt " +
+            "   WHERE rt.tag_id IN (1, 2, 3) " +
+            "   GROUP BY rt.recipe_id " +
+            "   HAVING MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+            "          MAX(IF(rt.tag_id = 1, rt.match_amount, -1)) " +
+            "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+            "          MAX(IF(rt.tag_id = 2, rt.match_amount, -1)) " +
+            "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
+            "          MAX(IF(rt.tag_id = 3, rt.match_amount, -1)) " +
+            ") " +
+            "ORDER BY r.popularity DESC " +
+            "LIMIT :limit OFFSET :offset", nativeQuery = true)
+    List<Map<String, Object>> findByTagIdForCandidateSetWithFavoriteAndCartStatus(
             @Param("tagId") Integer tagId,
             @Param("userId") Integer userId,
             @Param("offset") int offset,
