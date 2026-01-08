@@ -1,8 +1,13 @@
 package com.kitchen_manager.entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import jakarta.persistence.*;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 菜谱表
@@ -36,10 +41,10 @@ public class Recipe {
     @Column(name = "difficulty")
     private String difficulty;  // 烹饪难度（如简单、中等或困难等。）
 
-    @Column(name = "needs")
+    @Column(name = "needs", columnDefinition = "json")
     private String needs;       // 包含的原料
 
-    @Column(name = "steps")
+    @Column(name = "steps", columnDefinition = "json")
     private String steps;       // 步骤说明（JSON数组）
 
     @Column(name = "popularity")
@@ -56,4 +61,38 @@ public class Recipe {
 
     @Transient
     private double predictScore;            // 预测综合评分
+
+    /**
+     * 解析 needs JSON 字段为 List
+     */
+    public List<String> getNeedsAsList() {
+        if (needs == null || needs.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(needs, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            System.err.println("解析 needs 字段失败: " + needs);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * 解析 steps JSON 字段为 List
+     */
+    public List<String> getStepsAsList() {
+        if (steps == null || steps.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.readValue(steps, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            System.err.println("解析 steps 字段失败: " + steps);
+            return new ArrayList<>();
+        }
+    }
 }

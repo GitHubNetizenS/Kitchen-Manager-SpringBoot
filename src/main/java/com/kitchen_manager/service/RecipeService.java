@@ -24,6 +24,8 @@ public class RecipeService {
     private final RecipeIngredientRepository recipeIngredientRepository;
     private final IngredientIdfRepository ingredientIdfRepository;
 
+    private final ElasticsearchSyncService elasticsearchSyncService;
+
     public Recipe getRecipeDetail(Integer recipeId) {
         return recipeRepository.findById(recipeId).orElse(null);
     }
@@ -34,6 +36,8 @@ public class RecipeService {
     @Transactional
     public void incrementPopularity(Integer recipeId) {
         recipeRepository.incrementPopularity(recipeId);
+        syncToElasticsearch(recipeId);
+
     }
 
     /**
@@ -42,6 +46,7 @@ public class RecipeService {
     @Transactional
     public void increasePopularity(Integer recipeId, int amount) {
         recipeRepository.increasePopularity(recipeId, amount);
+        syncToElasticsearch(recipeId);
     }
 
     /**
@@ -50,6 +55,7 @@ public class RecipeService {
     @Transactional
     public void decreasePopularity(Integer recipeId, int amount) {
         recipeRepository.decreasePopularity(recipeId, amount);
+        syncToElasticsearch(recipeId);
     }
 
     public List<Recipe> getAllRecipes() {
@@ -70,6 +76,7 @@ public class RecipeService {
 
         // 收藏时增加热度10
         increasePopularity(recipeId, 10);
+        syncToElasticsearch(recipeId);
     }
 
     @Transactional
@@ -78,6 +85,7 @@ public class RecipeService {
 
         // 取消收藏时减少热度10（确保不小于0）
         decreasePopularity(recipeId, 10);
+        syncToElasticsearch(recipeId);
     }
 
     public long getFavoriteCount(Integer userId) {
@@ -164,6 +172,16 @@ public class RecipeService {
 
         // 烹饪后增加热度20
         increasePopularity(recipeId, 20);
+        syncToElasticsearch(recipeId);
+    }
+
+    private void syncToElasticsearch(Integer recipeId) {
+        try {
+            elasticsearchSyncService.syncOne(recipeId);
+        } catch (Exception e) {
+            System.err.println("同步到 Elasticsearch 失败 (recipe_id=" + recipeId + "): " + e.getMessage());
+            // 不抛出异常，避免影响主业务
+        }
     }
 
     @Transactional
@@ -381,7 +399,7 @@ public class RecipeService {
             featureList.add(features);
         }
         // 调用 Python 模型预测。
-        LightGBMRankPredictor   predictor = new LightGBMRankPredictor("D:\\Anaconda3\\python.exe", "python\\rank_predictor.py", "python\\lightgbm_rank_model.txt");
+        LightGBMRankPredictor   predictor = new LightGBMRankPredictor("D:\\python3.12\\python.exe", "python\\rank_predictor.py", "python\\lightgbm_rank_model.txt");
         List<Double>            scores;
 
         try {
@@ -414,7 +432,7 @@ public class RecipeService {
      * @param userId 用户ID
      * @return 标签匹配度（0~1）
      */
-    private double calculateTagMatchScore(Recipe recipe, Integer userId) {
+    public double calculateTagMatchScore(Recipe recipe, Integer userId) {
         if(null==recipe || null==userId) return 0.0;
 
         // 获取用户标签集合。
@@ -457,7 +475,7 @@ public class RecipeService {
      * @param userId 用户ID
      * @return 原料匹配度（0~1）
      */
-    private double calculateIngredientMatchScore(Recipe recipe, Integer userId) {
+    public double calculateIngredientMatchScore(Recipe recipe, Integer userId) {
         if(null==userId) return 0.0;
         // 获取用户已有原料。
         List<Integer> userIngredientIds = userIngredientRepository
