@@ -169,4 +169,19 @@ public class RecipeController {
             return ApiResponse.error("获取菜谱失败: " + e.getMessage());
         }
     }
+
+    @GetMapping("/recipelist/withcart")
+    public ApiResponse<Map<String, Object>> getRecipeListWithCartStatus(
+            @RequestParam("tag_id") Integer tagId,
+            @RequestParam(value = "page", defaultValue = "1") int page,
+            @RequestParam(value = "page_size", defaultValue = "20") int pageSize,
+            @RequestParam("user_id") Integer userId) {
+
+        try {
+            Map<String, Object> result = recipeService.getRecipesByTagAndPageWithFavoriteAndCartStatus(tagId, page, pageSize, userId);
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            return ApiResponse.error("获取菜谱列表失败: " + e.getMessage());
+        }
+    }
 }

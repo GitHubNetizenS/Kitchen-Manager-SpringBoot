@@ -5,6 +5,7 @@ import com.kitchen_manager.common.LightGBMRankPredictor;
 import com.kitchen_manager.dto.HistoryRecipeDTO;
 import com.kitchen_manager.dto.RecipeWithFavoriteProjection;
 import com.kitchen_manager.dto.UserFeatureContext;
+import com.kitchen_manager.dto.RecipeWithStatusDTO;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,8 @@ public class RecipeService {
     private final IngredientIdfRepository ingredientIdfRepository;
     private final UserShoppingListRepository shoppingListRepository;
 
+    private final ElasticsearchSyncService elasticsearchSyncService;
+
     public Recipe getRecipeDetail(Integer recipeId) {
         return recipeRepository.findById(recipeId).orElse(null);
     }
@@ -38,6 +41,8 @@ public class RecipeService {
     @Transactional
     public void incrementPopularity(Integer recipeId) {
         recipeRepository.incrementPopularity(recipeId);
+        syncToElasticsearch(recipeId);
+
     }
 
     /**
@@ -46,6 +51,7 @@ public class RecipeService {
     @Transactional
     public void increasePopularity(Integer recipeId, int amount) {
         recipeRepository.increasePopularity(recipeId, amount);
+        syncToElasticsearch(recipeId);
     }
 
     /**
@@ -54,6 +60,7 @@ public class RecipeService {
     @Transactional
     public void decreasePopularity(Integer recipeId, int amount) {
         recipeRepository.decreasePopularity(recipeId, amount);
+        syncToElasticsearch(recipeId);
     }
 
     public List<Recipe> getAllRecipes() {
@@ -74,6 +81,7 @@ public class RecipeService {
 
         // 收藏时增加热度10
         increasePopularity(recipeId, 10);
+        syncToElasticsearch(recipeId);
     }
 
     @Transactional
@@ -82,6 +90,7 @@ public class RecipeService {
 
         // 取消收藏时减少热度10（确保不小于0）
         decreasePopularity(recipeId, 10);
+        syncToElasticsearch(recipeId);
     }
 
     public long getFavoriteCount(Integer userId) {
@@ -168,6 +177,16 @@ public class RecipeService {
 
         // 烹饪后增加热度20
         increasePopularity(recipeId, 20);
+        syncToElasticsearch(recipeId);
+    }
+
+    private void syncToElasticsearch(Integer recipeId) {
+        try {
+            elasticsearchSyncService.syncOne(recipeId);
+        } catch (Exception e) {
+            System.err.println("同步到 Elasticsearch 失败 (recipe_id=" + recipeId + "): " + e.getMessage());
+            // 不抛出异常，避免影响主业务
+        }
     }
 
     @Transactional
@@ -181,43 +200,6 @@ public class RecipeService {
 
     public List<Integer> getHistoryRecipeIds(Integer userId) {
         return historyRepository.findRecipeIdsByUserId(userId);
-    }
-
-    /**
-     * 通过标签获取菜谱的分页列表
-     * @param tagId 标签ID
-     * @param page 分页数
-     * @param pageSize 页面大小
-     * @return 返回一个映射，映射的键值对包括候选菜谱列表、当前页面、页面大小、数据总数和页面总数
-     */
-    public Map<String, Object> getRecipesByTagAndPage(Integer tagId, int page, int pageSize, Integer userId) {
-        // 计算偏移量。
-        long            total;
-        List<Recipe>    recipes;
-        int             offset = (page-1) * pageSize;
-
-        // 根据tagId获取无排序的候选集。
-        if(0==tagId) {
-            recipes = recipeRepository.findAllForCandidateSet(offset, pageSize);
-            total = recipeRepository.countAll();
-        } else {
-            recipes = recipeRepository.findByTagIdForCandidateSet(tagId, offset, pageSize);
-            total = recipeRepository.countByTagId(tagId);
-        }
-        recipes = sortRecipesByFeatures(recipes, userId);
-
-        // 计算总页数。
-        int totalPages = (int)Math.ceil((double)total / pageSize);
-        // 返回结果和分页信息。
-        Map<String, Object> result = new HashMap<>();
-
-        result.put("recipes", recipes);
-        result.put("currentPage", page);
-        result.put("pageSize", pageSize);
-        result.put("total", total);
-        result.put("totalPages", totalPages);
-
-        return result;
     }
 
     /**
@@ -274,7 +256,7 @@ public class RecipeService {
     }
 
     /**
-     * 获取带推荐排序和收藏状态的菜谱列表
+     * 获取带推荐排序、收藏状态和购物车状态的菜谱列表
      */
     public Map<String, Object> getRecipesByTagAndPageWithRankingAndFavorite(Integer tagId, int page, int pageSize, Integer userId) {
         List<RecipeWithFavoriteProjection> projections;
@@ -287,6 +269,7 @@ public class RecipeService {
         // 从Map中提取Recipe对象。
         List<Recipe> recipes = new ArrayList<>();
         Map<Integer, Boolean> favoriteStatusMap = new HashMap<>();
+        Map<Integer, Boolean> cartStatusMap = new HashMap<>();
 
         for(RecipeWithFavoriteProjection p: projections) {
             Recipe recipe = new Recipe();
@@ -304,6 +287,7 @@ public class RecipeService {
             recipes.add(recipe);
             // 保存收藏状态。
             favoriteStatusMap.put(recipe.getRecipeId(), 1==p.getIsFavorite());
+            cartStatusMap.put(recipe.getRecipeId(), 1==p.getInShoppingCart());
         }
 
         // 调用排序方法（计算特征+LightGBM Rank）。
@@ -315,6 +299,8 @@ public class RecipeService {
         int             toIndex = Math.min(page*pageSize, total);
         List<Recipe>    pagedRecipes = recipes.subList(fromIndex, toIndex);
         // 重新组装带收藏状态的结果。
+
+        // 重新组装带收藏状态和购物车状态的结果
         List<Map<String, Object>> resultRecipes = new ArrayList<>();
 
         for(Recipe recipe: pagedRecipes) {
@@ -331,6 +317,8 @@ public class RecipeService {
             recipeMap.put("steps", recipe.getSteps());
             recipeMap.put("popularity", recipe.getPopularity());
             recipeMap.put("isFavorite", favoriteStatusMap.getOrDefault(recipe.getRecipeId(), false));
+            // 关键：添加购物车状态
+            recipeMap.put("inShoppingCart", cartStatusMap.getOrDefault(recipe.getRecipeId(), false));
 
             resultRecipes.add(recipeMap);
         }
@@ -1017,4 +1005,103 @@ public class RecipeService {
             }
         }
     }
+
+    /**
+     * 获取带收藏和购物车状态的菜谱列表
+     */
+    public Map<String, Object> getRecipesByTagAndPageWithFavoriteAndCartStatus(Integer tagId, int page, int pageSize, Integer userId) {
+        int offset = (page - 1) * pageSize;
+
+        List<Map<String, Object>> recipesWithStatus;
+        long total;
+
+        if (tagId == 0) {
+            recipesWithStatus = recipeRepository.findAllWithFavoriteAndCartStatus(userId, offset, pageSize);
+            total = recipeRepository.countAll();
+        } else {
+            recipesWithStatus = recipeRepository.findByTagIdWithFavoriteAndCartStatus(tagId, userId, offset, pageSize);
+            total = recipeRepository.countByTagId(tagId);
+        }
+
+        // 转换为DTO列表
+        List<RecipeWithStatusDTO> resultRecipes = new ArrayList<>();
+        for (Map<String, Object> recipeMap : recipesWithStatus) {
+            RecipeWithStatusDTO dto = new RecipeWithStatusDTO();
+
+            // 设置基本字段
+            if (recipeMap.containsKey("recipe_id")) {
+                dto.setRecipeId(((Number) recipeMap.get("recipe_id")).intValue());
+            }
+            if (recipeMap.containsKey("name")) {
+                dto.setName((String) recipeMap.get("name"));
+            }
+            if (recipeMap.containsKey("image_url")) {
+                dto.setImageUrl((String) recipeMap.get("image_url"));
+            }
+            if (recipeMap.containsKey("taste")) {
+                dto.setTaste((String) recipeMap.get("taste"));
+            }
+            if (recipeMap.containsKey("method")) {
+                dto.setMethod((String) recipeMap.get("method"));
+            }
+            if (recipeMap.containsKey("time")) {
+                dto.setTime((String) recipeMap.get("time"));
+            }
+            if (recipeMap.containsKey("difficulty")) {
+                dto.setDifficulty((String) recipeMap.get("difficulty"));
+            }
+            if (recipeMap.containsKey("needs")) {
+                dto.setNeeds((String) recipeMap.get("needs"));
+            }
+            if (recipeMap.containsKey("steps")) {
+                dto.setSteps((String) recipeMap.get("steps"));
+            }
+            if (recipeMap.containsKey("popularity")) {
+                dto.setPopularity(((Number) recipeMap.get("popularity")).intValue());
+            }
+
+            // 设置状态字段
+            if (recipeMap.containsKey("isFavorite")) {
+                Object favoriteObj = recipeMap.get("isFavorite");
+                dto.setIsFavorite(parseBooleanValue(favoriteObj));
+            }
+
+            if (recipeMap.containsKey("inShoppingCart")) {
+                Object cartObj = recipeMap.get("inShoppingCart");
+                dto.setInShoppingCart(parseBooleanValue(cartObj));
+            }
+
+            resultRecipes.add(dto);
+        }
+
+        int totalPages = (int) Math.ceil((double) total / pageSize);
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", resultRecipes);
+        result.put("currentPage", page);
+        result.put("pageSize", pageSize);
+        result.put("total", total);
+        result.put("totalPages", totalPages);
+
+        return result;
+    }
+
+    /**
+     * 解析布尔值（支持多种类型）
+     */
+    private Boolean parseBooleanValue(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        if (obj instanceof Boolean) {
+            return (Boolean) obj;
+        } else if (obj instanceof Number) {
+            return ((Number) obj).intValue() == 1;
+        } else if (obj instanceof String) {
+            String str = ((String) obj).trim().toLowerCase();
+            return str.equals("true") || str.equals("1") || str.equals("y");
+        }
+        return false;
+    }
+
+
 }
