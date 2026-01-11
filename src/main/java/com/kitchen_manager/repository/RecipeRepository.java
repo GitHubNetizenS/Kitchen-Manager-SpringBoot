@@ -1,5 +1,6 @@
 package com.kitchen_manager.repository;
 
+import com.kitchen_manager.dto.RecipeWithFavoriteProjection;
 import com.kitchen_manager.entity.*;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -187,42 +188,40 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
      * 获取菜谱候选集（带收藏状态和购物车状态）
      */
     @Query(value = "SELECT DISTINCT " +
-            "r.recipe_id, " +
-            "r.name, " +
-            "r.image_url, " +
-            "r.taste, " +
-            "r.method, " +
-            "r.time, " +
-            "r.difficulty, " +
-            "r.needs, " +
-            "r.steps, " +
-            "r.popularity, " +
-            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
-            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
+            "r.recipe_id AS recipeId, " +
+            "r.name AS name, " +
+            "r.image_url AS imageUrl, " +
+            "r.taste AS taste, " +
+            "r.method AS method, " +
+            "r.time AS time, " +
+            "r.difficulty AS difficulty, " +
+            "r.needs AS needs, " +
+            "r.steps AS steps, " +
+            "r.popularity AS popularity, " +
+            "IF(ufr.id IS NOT NULL, 1, 0) AS isFavorite, " +
+            "IF(usl.id IS NOT NULL, 1, 0) AS inShoppingCart " +
             "FROM recipe r " +
             "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
-            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
-            "LIMIT :limit OFFSET :offset", nativeQuery = true)
-    List<Map<String, Object>> findAllForCandidateSetWithFavoriteStatus(@Param("userId") Integer userId,
-                                                                       @Param("offset") int offset,
-                                                                       @Param("limit") int limit);
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId ",
+            nativeQuery = true)
+    List<RecipeWithFavoriteProjection> findAllForCandidateSetWithFavoriteStatus(@Param("userId") Integer userId);
 
     /**
      * 按标签ID获取菜谱候选集（带收藏状态和购物车状态）
      */
-    @Query(value = "SELECT " +
-            "r.recipe_id, " +
-            "r.name, " +
-            "r.image_url, " +
-            "r.taste, " +
-            "r.method, " +
-            "r.time, " +
-            "r.difficulty, " +
-            "r.needs, " +
-            "r.steps, " +
-            "r.popularity, " +
-            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
-            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
+    @Query(value = "SELECT DISTINCT " +
+            "r.recipe_id AS recipeId, " +
+            "r.name AS name, " +
+            "r.image_url AS imageUrl, " +
+            "r.taste AS taste, " +
+            "r.method AS method, " +
+            "r.time AS time, " +
+            "r.difficulty AS difficulty, " +
+            "r.needs AS needs, " +
+            "r.steps AS steps, " +
+            "r.popularity AS popularity, " +
+            "IF(ufr.id IS NOT NULL, 1, 0) AS isFavorite, " +
+            "IF(usl.id IS NOT NULL, 1, 0) AS inShoppingCart " +
             "FROM recipe r " +
             "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
             "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
@@ -237,13 +236,9 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
             "          MAX(IF(rt.tag_id = 2, rt.match_amount, -1)) " +
             "      AND MAX(CASE WHEN rt.tag_id = :tagId THEN rt.match_amount END) >= " +
             "          MAX(IF(rt.tag_id = 3, rt.match_amount, -1)) " +
-            ") " +
-            "ORDER BY r.popularity DESC " +
-            "LIMIT :limit OFFSET :offset", nativeQuery = true)
-    List<Map<String, Object>> findByTagIdForCandidateSetWithFavoriteStatus(@Param("tagId") Integer tagId,
-                                                                           @Param("userId") Integer userId,
-                                                                           @Param("offset") int offset,
-                                                                           @Param("limit") int limit);
+            ") ", nativeQuery = true)
+    List<RecipeWithFavoriteProjection> findByTagIdForCandidateSetWithFavoriteStatus(@Param("tagId") Integer tagId,
+                                                                           @Param("userId") Integer userId);
 
     /**
      * 根据菜谱ID查询（带收藏状态）- 用于单个菜谱查询
@@ -508,7 +503,7 @@ public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
      * 按标签查询菜谱（带收藏状态和购物车状态）- 用于推荐列表
      */
     @Query(value = "SELECT DISTINCT " +
-            ".recipe_id, " +
+            "r.recipe_id, " +
             "r.name, " +
             "r.image_url, " +
             "r.taste, " +

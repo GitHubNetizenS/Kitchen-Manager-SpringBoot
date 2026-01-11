@@ -1,6 +1,7 @@
 package com.kitchen_manager.service;
 
 import com.kitchen_manager.common.LightGBMRankPredictor;
+import com.kitchen_manager.dto.UserFeatureContext;
 import com.kitchen_manager.elasticsearch.RecipeDocument;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
@@ -22,6 +23,10 @@ public class SearchService {
     private final RecipeRepository recipeRepository;
     private final RecipeService recipeService;
     private final ElasticsearchOperations elasticsearchOperations;
+    private final UserTagRepository userTagRepository;
+    private final UserIngredientRepository userIngredientRepository;
+    private final IngredientIdfRepository ingredientIdfRepository;
+
     /**
      * 搜索菜谱并排序
      * @param keyword 搜索关键词
@@ -97,6 +102,8 @@ public class SearchService {
      * 综合排序：使用 LightGBM 模型（复用首页推荐算法）
      */
     private List<Recipe> sortByLightGBM(List<Recipe> recipes, Integer userId) {
+        UserFeatureContext ctx = buildUserFeatureContext(userId);
+
         if (userId == null || userId <= 0) {
             // 未登录用户，按热度排序
             recipes.sort((r1, r2) -> Integer.compare(r2.getPopularity(), r1.getPopularity()));
@@ -108,11 +115,11 @@ public class SearchService {
 
         for (Recipe recipe : recipes) {
             // ① 标签匹配度
-            double tagScore = recipeService.calculateTagMatchScore(recipe, userId);
+            double tagScore = recipeService.calculateTagMatchScore(recipe, ctx);
             recipe.setTagMatchScore(tagScore);
 
             // ② 原料匹配度
-            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, userId);
+            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, ctx);
             recipe.setIngredientMatchScore(ingredientScore);
 
             // ③ 热度特征
@@ -158,6 +165,8 @@ public class SearchService {
      * 只按标签匹配度排序
      */
     private List<Recipe> sortByTagMatchOnly(List<Recipe> recipes, Integer userId) {
+        UserFeatureContext ctx = buildUserFeatureContext(userId);
+
         if (userId == null || userId <= 0) {
             // 未登录用户，按热度排序
             recipes.sort((r1, r2) -> Integer.compare(r2.getPopularity(), r1.getPopularity()));
@@ -166,7 +175,7 @@ public class SearchService {
 
         // 计算标签匹配度
         for (Recipe recipe : recipes) {
-            double tagScore = recipeService.calculateTagMatchScore(recipe, userId);
+            double tagScore = recipeService.calculateTagMatchScore(recipe, ctx);
             recipe.setTagMatchScore(tagScore);
         }
 
@@ -180,6 +189,8 @@ public class SearchService {
      * 只按原料匹配度排序
      */
     private List<Recipe> sortByIngredientMatchOnly(List<Recipe> recipes, Integer userId) {
+        UserFeatureContext ctx = buildUserFeatureContext(userId);
+
         if (userId == null || userId <= 0) {
             // 未登录用户，按热度排序
             recipes.sort((r1, r2) -> Integer.compare(r2.getPopularity(), r1.getPopularity()));
@@ -188,7 +199,7 @@ public class SearchService {
 
         // 计算原料匹配度
         for (Recipe recipe : recipes) {
-            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, userId);
+            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, ctx);
             recipe.setIngredientMatchScore(ingredientScore);
         }
 
@@ -196,5 +207,47 @@ public class SearchService {
         recipes.sort((r1, r2) -> Double.compare(r2.getIngredientMatchScore(), r1.getIngredientMatchScore()));
 
         return recipes;
+    }
+
+    /**
+     * 建立用户特征上下文对象
+     * @param userId 用户ID
+     * @return 用户特征上下文对象
+     */
+    private UserFeatureContext buildUserFeatureContext(Integer userId) {
+
+        Set<Integer> userTagSet = new HashSet<>(
+                userTagRepository.findTagIdsByUserId(userId)
+        );
+
+        Set<Integer> userIngredientSet = userIngredientRepository
+                .findByUserIdAndQuantity(userId, 1)
+                .stream()
+                .map(UserIngredient::getIngredientId)
+                .collect(Collectors.toSet());
+
+        Map<Integer, Double> ingredientIdfMap = loadIngredientIdfMap();
+
+        return new UserFeatureContext(
+                userTagSet,
+                userIngredientSet,
+                ingredientIdfMap
+        );
+    }
+
+    /**
+     * 从IDF中加载数据
+     * @return IDF映射数据
+     */
+    private Map<Integer, Double> loadIngredientIdfMap() {
+
+        List<IngredientIdf>     list = ingredientIdfRepository.findAllIdf();
+        Map<Integer, Double>    map = new HashMap<>(list.size());
+
+        for(IngredientIdf idf: list) {
+            map.put(idf.getIngredientId(), idf.getIdfValue());
+        }
+
+        return map;
     }
 }

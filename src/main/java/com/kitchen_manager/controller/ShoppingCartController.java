@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/cart")
@@ -102,6 +103,108 @@ public class ShoppingCartController {
             return ApiResponse.success(isInCart);
         } catch (Exception e) {
             return ApiResponse.error("检查失败: " + e.getMessage());
+        }
+    }
+
+
+    /**
+     * 更新购物车中食材的购买状态
+     * POST /api/cart/update-status
+     */
+    @PostMapping("/update-status")
+    public ApiResponse<Void> updateIngredientStatus(
+            @RequestParam("user_id") Integer userId,
+            @RequestParam("recipe_id") Integer recipeId,
+            @RequestParam("ingredient_id") Integer ingredientId,
+            @RequestParam("status") String status) {
+
+        try {
+            if (!"pending".equals(status) && !"purchased".equals(status)) {
+                return ApiResponse.error("状态值无效，必须是 'pending' 或 'purchased'");
+            }
+
+            recipeService.updateCartIngredientStatus(userId, recipeId, ingredientId, status);
+            return ApiResponse.success("状态更新成功", null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("更新状态失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 批量更新菜谱所有食材状态
+     * POST /api/cart/update-all-status
+     */
+    @PostMapping("/update-all-status")
+    public ApiResponse<Void> updateAllIngredientsStatus(
+            @RequestParam("user_id") Integer userId,
+            @RequestParam("recipe_id") Integer recipeId,
+            @RequestParam("status") String status) {
+
+        try {
+            if (!"pending".equals(status) && !"purchased".equals(status)) {
+                return ApiResponse.error("状态值无效，必须是 'pending' 或 'purchased'");
+            }
+
+            recipeService.updateAllIngredientsStatus(userId, recipeId, status);
+            return ApiResponse.success("批量更新成功", null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("批量更新失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 删除购物车中的食材
+     * POST /api/cart/delete-ingredient
+     */
+    @PostMapping("/delete-ingredient")
+    public ApiResponse<Void> deleteIngredientFromCart(
+            @RequestParam("user_id") Integer userId,
+            @RequestParam("recipe_id") Integer recipeId,
+            @RequestParam("ingredient_id") Integer ingredientId) {
+
+        try {
+            recipeService.deleteCartIngredient(userId, recipeId, ingredientId);
+            return ApiResponse.success("食材删除成功", null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("删除食材失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 删除购物车中的整个菜谱
+     * POST /api/cart/delete-recipe
+     */
+    @PostMapping("/delete-recipe")
+    public ApiResponse<Void> deleteRecipeFromCart(
+            @RequestParam("user_id") Integer userId,
+            @RequestParam("recipe_id") Integer recipeId) {
+
+        try {
+            recipeService.removeFromShoppingCart(userId, recipeId);
+            return ApiResponse.success("菜谱删除成功", null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("删除菜谱失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取用户购物车中的菜谱（按菜谱分组）
+     * GET /api/cart/shopping-recipes
+     */
+    @GetMapping("/shopping-recipes")
+    public ApiResponse<List<Map<String, Object>>> getShoppingCartRecipes(
+            @RequestParam("user_id") Integer userId) {
+
+        try {
+            List<Map<String, Object>> recipes = recipeService.getGroupedShoppingCartByUserId(userId);
+            return ApiResponse.success(recipes);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("获取购物车菜谱失败: " + e.getMessage());
         }
     }
 }

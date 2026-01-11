@@ -1,7 +1,10 @@
 package com.kitchen_manager.service;
 
+import com.kitchen_manager.common.LightGBMRankHttpPredictor;
 import com.kitchen_manager.common.LightGBMRankPredictor;
 import com.kitchen_manager.dto.HistoryRecipeDTO;
+import com.kitchen_manager.dto.RecipeWithFavoriteProjection;
+import com.kitchen_manager.dto.UserFeatureContext;
 import com.kitchen_manager.dto.RecipeWithStatusDTO;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
@@ -256,65 +259,53 @@ public class RecipeService {
      * 获取带推荐排序、收藏状态和购物车状态的菜谱列表
      */
     public Map<String, Object> getRecipesByTagAndPageWithRankingAndFavorite(Integer tagId, int page, int pageSize, Integer userId) {
-        int offset = (page - 1) * pageSize;
+        List<RecipeWithFavoriteProjection> projections;
 
-        List<Map<String, Object>> recipesWithFavorite;
-        long total;
-
-        if (tagId == 0) {
-            recipesWithFavorite = recipeRepository.findAllForCandidateSetWithFavoriteStatus(userId, offset, pageSize);
-            total = recipeRepository.countAll();
+        if(0==tagId) {
+            projections = recipeRepository.findAllForCandidateSetWithFavoriteStatus(userId);
         } else {
-            recipesWithFavorite = recipeRepository.findByTagIdForCandidateSetWithFavoriteStatus(tagId, userId, offset, pageSize);
-            total = recipeRepository.countByTagId(tagId);
+            projections = recipeRepository.findByTagIdForCandidateSetWithFavoriteStatus(tagId, userId);
         }
-
-        // 从Map中提取Recipe对象
+        // 从Map中提取Recipe对象。
         List<Recipe> recipes = new ArrayList<>();
         Map<Integer, Boolean> favoriteStatusMap = new HashMap<>();
         Map<Integer, Boolean> cartStatusMap = new HashMap<>();
 
-        for (Map<String, Object> recipeMap : recipesWithFavorite) {
+        for(RecipeWithFavoriteProjection p: projections) {
             Recipe recipe = new Recipe();
-            recipe.setRecipeId((Integer) recipeMap.get("recipe_id"));
-            recipe.setName((String) recipeMap.get("name"));
-            recipe.setImageUrl((String) recipeMap.get("image_url"));
-            recipe.setTaste((String) recipeMap.get("taste"));
-            recipe.setMethod((String) recipeMap.get("method"));
-            recipe.setTime((String) recipeMap.get("time"));
-            recipe.setDifficulty((String) recipeMap.get("difficulty"));
-            recipe.setNeeds((String) recipeMap.get("needs"));
-            recipe.setSteps((String) recipeMap.get("steps"));
-            recipe.setPopularity((Integer) recipeMap.get("popularity"));
 
+            recipe.setRecipeId(p.getRecipeId());
+            recipe.setName(p.getName());
+            recipe.setImageUrl(p.getImageUrl());
+            recipe.setTaste(p.getTaste());
+            recipe.setMethod(p.getMethod());
+            recipe.setTime(p.getTime());
+            recipe.setDifficulty(p.getDifficulty());
+            recipe.setNeeds(p.getNeeds());
+            recipe.setSteps(p.getSteps());
+            recipe.setPopularity(p.getPopularity());
             recipes.add(recipe);
-
-            // 保存收藏状态
-            Boolean isFavorite = recipeMap.get("isFavorite") instanceof Number
-                    ? ((Number) recipeMap.get("isFavorite")).intValue() == 1
-                    : (Boolean) recipeMap.get("isFavorite");
-            favoriteStatusMap.put(recipe.getRecipeId(), isFavorite);
-
-            // 保存购物车状态 - 关键修复
-            Boolean inShoppingCart = false;
-            if (recipeMap.containsKey("inShoppingCart")) {
-                Object cartObj = recipeMap.get("inShoppingCart");
-                if (cartObj instanceof Number) {
-                    inShoppingCart = ((Number) cartObj).intValue() == 1;
-                } else if (cartObj instanceof Boolean) {
-                    inShoppingCart = (Boolean) cartObj;
-                }
-            }
-            cartStatusMap.put(recipe.getRecipeId(), inShoppingCart);
+            // 保存收藏状态。
+            favoriteStatusMap.put(recipe.getRecipeId(), 1==p.getIsFavorite());
+            cartStatusMap.put(recipe.getRecipeId(), 1==p.getInShoppingCart());
         }
 
-        // 应用推荐排序
+        // 调用排序方法（计算特征+LightGBM Rank）。
         recipes = sortRecipesByFeatures(recipes, userId);
+        // 分页处理。
+        int             total = recipes.size();
+        int             totalPages = (int)Math.ceil((double)total/pageSize);
+        int             fromIndex = Math.min((page-1)*pageSize, total);
+        int             toIndex = Math.min(page*pageSize, total);
+        List<Recipe>    pagedRecipes = recipes.subList(fromIndex, toIndex);
+        // 重新组装带收藏状态的结果。
 
         // 重新组装带收藏状态和购物车状态的结果
         List<Map<String, Object>> resultRecipes = new ArrayList<>();
-        for (Recipe recipe : recipes) {
+
+        for(Recipe recipe: pagedRecipes) {
             Map<String, Object> recipeMap = new HashMap<>();
+
             recipeMap.put("recipe_id", recipe.getRecipeId());
             recipeMap.put("name", recipe.getName());
             recipeMap.put("image_url", recipe.getImageUrl());
@@ -332,7 +323,6 @@ public class RecipeService {
             resultRecipes.add(recipeMap);
         }
 
-        int totalPages = (int) Math.ceil((double) total / pageSize);
         Map<String, Object> result = new HashMap<>();
         result.put("recipes", resultRecipes);
         result.put("currentPage", page);
@@ -350,43 +340,93 @@ public class RecipeService {
      * @return 排序后的菜谱列表
      */
     private List<Recipe> sortRecipesByFeatures(List<Recipe> recipes, Integer userId) {
+        UserFeatureContext ctx = buildUserFeatureContext(userId);
+
         if(null==recipes || recipes.isEmpty() || null==userId) {
 
             return recipes;
         }
         // 遍历每个菜谱，计算标签匹配度、原料匹配度、热度特征。
-        List<List<Double>> featureList = new ArrayList<>();
+        Map<Integer, List<RecipeTag>> recipeTagMap =
+                recipeTagRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(RecipeTag::getRecipeId));
+
+        Map<Integer, List<Integer>> recipeIngredientMap =
+                recipeIngredientRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(
+                        RecipeIngredient::getRecipeId,
+                        Collectors.mapping(RecipeIngredient::getIngredientId, Collectors.toList())
+                ));
+        for(Recipe recipe: recipes) {
+            recipe.setRecipeTags(recipeTagMap.getOrDefault(recipe.getRecipeId(), List.of()));
+            recipe.setIngredientIds(recipeIngredientMap.getOrDefault(recipe.getRecipeId(), List.of()));
+        }
 
         for(Recipe recipe: recipes) {
             // 标签匹配度。
-            double tagScore = calculateTagMatchScore(recipe, userId);
+            double tagScore = calculateTagMatchScore(recipe, ctx);
+            // 原料匹配度。
+            double ingredientScore = calculateIngredientMatchScore(recipe, ctx);
+            // 热度特征。
+            double hotScore = Math.log(1+recipe.getPopularity()) / 10.0;
 
             recipe.setTagMatchScore(tagScore);
-            // 原料匹配度。
-            double ingredientScore = calculateIngredientMatchScore(recipe, userId);
-
             recipe.setIngredientMatchScore(ingredientScore);
-            // 热度特征。
-            double hotScore = Math.log(1+recipe.getPopularity());
-
             recipe.setHotScore(hotScore);
-
-            List<Double> features = new ArrayList<>();
-
-            features.add(tagScore);
-            features.add(ingredientScore);
-            features.add(hotScore);
-            featureList.add(features);
         }
+
+        List<Recipe> ingredientPositive = recipes.stream()
+                .filter(r -> r.getIngredientMatchScore() > 0.0)
+                .sorted(Comparator.comparingDouble(Recipe::getIngredientMatchScore).reversed())
+                .limit(60)
+                .toList();
+        List<Recipe> candidates = new ArrayList<>(ingredientPositive);
+        List<Recipe> ingredientZeroTop = recipes.stream()
+                .filter(r -> r.getIngredientMatchScore()==0.0)
+                .sorted(Comparator.comparingDouble(
+                        (Recipe r) -> r.getTagMatchScore()*0.6 + r.getHotScore()*0.4
+                ).reversed())
+                .limit(20)
+                .toList();
+
+        candidates.addAll(ingredientZeroTop);
+        candidates = new ArrayList<>(
+                candidates.stream()
+                .collect(Collectors.toMap(
+                        Recipe::getRecipeId,
+                        r -> r,
+                        (a, b) -> a
+                ))
+                .values()
+        );
+
+        List<List<Double>> featureList = new ArrayList<>();
+
+        for(Recipe recipe: candidates) {
+            featureList.add(List.of(
+                    recipe.getTagMatchScore(),
+                    recipe.getIngredientMatchScore(),
+                    recipe.getHotScore()
+            ));
+        }
+
         // 调用 Python 模型预测。
-        LightGBMRankPredictor   predictor = new LightGBMRankPredictor("D:\\python3.12\\python.exe", "python\\rank_predictor.py", "python\\lightgbm_rank_model.txt");
+        LightGBMRankHttpPredictor predictor = new LightGBMRankHttpPredictor("http://localhost:5000");
         List<Double>            scores;
 
         try {
+            long startTime = System.currentTimeMillis();
             scores = predictor.predictScores(featureList);
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+
+            System.out.println("predictScores 执行时间: " + duration + " 毫秒");
+            System.out.println("predictScores 执行时间: " + (duration / 1000.0) + " 秒");
         } catch (Exception e) {
             System.out.println(e.getMessage());
-            System.out.println("使用简单加权排序！");
+            System.out.println("Python模型调用失败，启动备用措施：简单加权排序。");
             // 出错时回退到简单加权排序。
             scores = new ArrayList<>();
             for(Recipe recipe: recipes) {
@@ -398,108 +438,189 @@ public class RecipeService {
             }
         }
         // 设置分数并排序。
-        for(int i=0; i<=recipes.size()-1; ++i) {
-            recipes.get(i).setPredictScore(scores.get(i));
+        for(int i=0; i<=candidates.size()-1; ++i) {
+            candidates.get(i).setPredictScore(scores.get(i));
         }
-        recipes.sort((r1, r2) -> Double.compare(r2.getPredictScore(), r1.getPredictScore()));
+        candidates.sort((r1, r2) -> Double.compare(r2.getPredictScore(), r1.getPredictScore()));
 
-        return recipes;
+        return candidates;
     }
 
     /**
-     * 计算单个菜谱与用户标签的匹配度（余弦相似度）
-     * @param recipe 菜谱对象
+     * 建立用户特征上下文对象
      * @param userId 用户ID
+     * @return 用户特征上下文对象
+     */
+    private UserFeatureContext buildUserFeatureContext(Integer userId) {
+
+        Set<Integer> userTagSet = new HashSet<>(
+                userTagRepository.findTagIdsByUserId(userId)
+        );
+
+        Set<Integer> userIngredientSet = userIngredientRepository
+                .findByUserIdAndQuantity(userId, 1)
+                .stream()
+                .map(UserIngredient::getIngredientId)
+                .collect(Collectors.toSet());
+
+        Map<Integer, Double> ingredientIdfMap = loadIngredientIdfMap();
+
+        return new UserFeatureContext(
+                userTagSet,
+                userIngredientSet,
+                ingredientIdfMap
+        );
+    }
+
+
+    /**
+     * 计算单个菜谱与用户标签的匹配度（余弦相似度）
+     *
+     * @param recipe 菜谱对象
+     * @param ctx    用户上下文
      * @return 标签匹配度（0~1）
      */
-    public double calculateTagMatchScore(Recipe recipe, Integer userId) {
-        if(null==recipe || null==userId) return 0.0;
-
-        // 获取用户标签集合。
-        List<Integer> userTagIds = userTagRepository.findTagIdsByUserId(userId);
-
-        // 获取菜谱标签及match_amount。
-        List<RecipeTag> recipeTags = recipeTagRepository.findByRecipeId(recipe.getRecipeId());
-
-        if (userTagIds.isEmpty() || recipeTags.isEmpty()) return 0.0;
-
-        // 构建向量。
-        // 假设标签总数为13维。
-        double[] userVector = new double[13];
-        double[] recipeVector = new double[13];
-
-        for(Integer tagId: userTagIds) {
-            // 用户标签向量值为1。
-            userVector[tagId-1] = 1.0;
+    double calculateTagMatchScore(Recipe recipe, UserFeatureContext ctx) {
+        if (recipe == null || ctx == null) {
+            return 0.0;
         }
-        for(RecipeTag rt: recipeTags) {
-            // 菜谱标签向量值为match_amount。
-            recipeVector[rt.getTagId()-1] = rt.getMatchAmount();
-        }
-        // 计算余弦相似度。
-        double dot = 0.0, normUser = 0.0, normRecipe = 0.0;
 
-        for(int i=0; i<=12; ++i) {
-            dot += userVector[i] * recipeVector[i];
-            normUser += userVector[i] * userVector[i];
-            normRecipe += recipeVector[i] * recipeVector[i];
-        }
-        if(0==normUser || 0==normRecipe) return 0.0;
+        Set<Integer> userTagIds = ctx.getUserTagSet();
+        List<RecipeTag> recipeTags = recipe.getRecipeTags();
 
-        return dot / (Math.sqrt(normUser)*Math.sqrt(normRecipe));
+        if (userTagIds == null || userTagIds.isEmpty()
+                || recipeTags == null || recipeTags.isEmpty()) {
+            return 0.0;
+        }
+
+        double[] userVec = new double[13];
+        double[] recipeVec = new double[13];
+
+        // 构造用户向量（0/1）
+        for (Integer tagId : userTagIds) {
+            int idx = tagId - 1;
+            if (idx >= 0 && idx < 13) {
+                userVec[idx] = 1.0;
+            }
+        }
+
+        // 构造菜谱向量（带权）
+        for (RecipeTag rt : recipeTags) {
+            int idx = rt.getTagId() - 1;
+            if (idx >= 0 && idx < 13) {
+                recipeVec[idx] = rt.getMatchAmount();
+            }
+        }
+
+        double dot = 0.0;
+        double normUser = 0.0;
+        double normRecipe = 0.0;
+
+        for (int i = 0; i < 13; i++) {
+            dot += userVec[i] * recipeVec[i];
+            normUser += userVec[i] * userVec[i];
+            normRecipe += recipeVec[i] * recipeVec[i];
+        }
+
+        if (normUser == 0.0 || normRecipe == 0.0) {
+            return 0.0;
+        }
+
+        return dot / (Math.sqrt(normUser) * Math.sqrt(normRecipe));
     }
+
 
     /**
      * 计算用户已有原料和菜谱所需原料的交集占所需原料的比例（原料匹配度）
      * @param recipe 菜谱对象
-     * @param userId 用户ID
+     * @param ctx 用户上下文
      * @return 原料匹配度（0~1）
      */
-    public double calculateIngredientMatchScore(Recipe recipe, Integer userId) {
-        if(null==userId) return 0.0;
-        // 获取用户已有原料。
-        List<Integer> userIngredientIds = userIngredientRepository
-                .findByUserIdAndQuantity(userId, 1)
-                .stream()
-                .map(UserIngredient::getIngredientId)
-                .toList();
-        // 获取菜谱所需原料。
-        List<Integer> recipeIngredientIds = recipeIngredientRepository
-                .findByRecipeId(recipe.getRecipeId())
-                .stream()
-                .map(RecipeIngredient::getIngredientId)
-                .toList();
+    double calculateIngredientMatchScore(Recipe recipe, UserFeatureContext ctx) {
+        if(null==recipe || null==ctx) {
 
-        if(recipeIngredientIds.isEmpty()) return 0.0;
-        // 计算已有原料交集。
-        long matchCount = recipeIngredientIds
-                .stream()
-                .filter(userIngredientIds::contains)
-                .count();
-        // 计算coverage。
+            return -1.0;
+        }
+
+        Set<Integer>            userIngredientIds = ctx.getUserIngredientSet();
+        Map<Integer, Double>    idfMap = ctx.getIngredientIdfMap();
+        List<Integer>           recipeIngredientIds = recipe.getIngredientIds();
+
+        if(null==recipeIngredientIds || recipeIngredientIds.isEmpty()) {
+
+            return -1.0;
+        }
+        if (userIngredientIds == null || userIngredientIds.isEmpty()) {
+
+            return 0.0;
+        }
+
+        int matchCount = 0;
+
+        for(Integer ing: recipeIngredientIds) {
+            if (userIngredientIds.contains(ing)) {
+                ++matchCount;
+            }
+        }
+
         double coverage = (double)matchCount / recipeIngredientIds.size();
-        // 计算 missing_core_ratio（TF-IDF版本）。
+
+        if(coverage<0.15) {
+
+            return coverage * 0.01;
+        }
+
         double tf = 1.0 / recipeIngredientIds.size();
         double missingIdfSum = 0.0;
         double totalIdfSum = 0.0;
 
-        for(Integer ingredientId: recipeIngredientIds) {
-            double idf = ingredientIdfRepository
-                    .findById(ingredientId)
-                    .map(IngredientIdf::getIdfValue)
-                    .orElse(0.0);
+        for(Integer ing: recipeIngredientIds) {
+            double idf = idfMap.getOrDefault(ing, 1.0);
+            double weight = idf * tf;
 
-            totalIdfSum += idf * tf;
-            if(!userIngredientIds.contains(ingredientId)) {
-                missingIdfSum += idf * tf;
+            totalIdfSum += weight;
+            if(!userIngredientIds.contains(ing)) {
+                missingIdfSum += weight;
             }
         }
+        double missingCoreRatio = totalIdfSum>0.0 ?missingIdfSum/totalIdfSum :1.0;
 
-        double missingCoreRatio = totalIdfSum==0.0? 0.0: missingIdfSum/totalIdfSum;
-
-        // 最终原料匹配度。
-        return coverage * (1.0 - missingCoreRatio);
+        return coverage*(1.0-missingCoreRatio);
     }
+
+    /**
+     * 加载用户特征上下文
+     * @param userId 用户ID
+     * @return 用户特征上下文
+     */
+    private UserFeatureContext loadUserFeatureContext(Integer userId) {
+
+        // 一次性查用户标签。
+        Set<Integer> userTags = new HashSet<>(userTagRepository.findTagIdsByUserId(userId));
+        // 一次性查用户原料。
+        Set<Integer> userIngredients = new HashSet<>(userIngredientRepository.findIngredientIdsByUserId(userId));
+        // 一次性查IDF（建议后续做缓存）。
+        Map<Integer, Double> idfMap = loadIngredientIdfMap();
+
+        return new UserFeatureContext(userTags, userIngredients, idfMap);
+    }
+
+    /**
+     * 从IDF中加载数据
+     * @return IDF映射数据
+     */
+    private Map<Integer, Double> loadIngredientIdfMap() {
+
+        List<IngredientIdf>     list = ingredientIdfRepository.findAllIdf();
+        Map<Integer, Double>    map = new HashMap<>(list.size());
+
+        for(IngredientIdf idf: list) {
+            map.put(idf.getIngredientId(), idf.getIdfValue());
+        }
+
+        return map;
+    }
+
 
     /**
      * 按烹饪时间排序获取历史菜谱（包含历史记录ID和烹饪时间）
@@ -982,5 +1103,127 @@ public class RecipeService {
         return false;
     }
 
+    /**
+     * 获取用户购物车中的菜谱列表（按菜谱分组）
+     */
+    public List<Map<String, Object>> getShoppingCartRecipes(Integer userId) {
+        List<Object[]> results = UserShoppingListRepository.findGroupedShoppingCartByUserId(userId);
+        List<Map<String, Object>> recipes = new ArrayList<>();
 
+        for (Object[] row : results) {
+            Map<String, Object> recipeMap = new HashMap<>();
+            recipeMap.put("recipeId", row[0]);
+            recipeMap.put("recipeName", row[1]);
+            recipeMap.put("imageUrl", row[2]);
+            recipeMap.put("ingredientList", row[3]);
+            recipeMap.put("totalIngredients", row[4]);
+            recipeMap.put("purchasedCount", row[5]);
+
+            // 计算购买进度
+            int total = ((Number) row[4]).intValue();
+            int purchased = ((Number) row[5]).intValue();
+            recipeMap.put("progress", total > 0 ? (purchased * 100 / total) : 0);
+
+            recipes.add(recipeMap);
+        }
+
+        return recipes;
+    }
+
+    /**
+     * 更新购物车中食材的购买状态
+     */
+    @Transactional
+    public void updateCartIngredientStatus(Integer userId, Integer recipeId,
+                                           Integer ingredientId, String status) {
+        shoppingListRepository.updateIngredientStatus(userId, recipeId, ingredientId, status);
+    }
+
+    /**
+     * 删除购物车中的食材
+     */
+    @Transactional
+    public void deleteCartIngredient(Integer userId, Integer recipeId, Integer ingredientId) {
+        shoppingListRepository.deleteIngredientFromCart(userId, recipeId, ingredientId);
+    }
+
+    /**
+     * 批量更新购物车中某个菜谱的所有食材状态
+     */
+    @Transactional
+    public void updateAllIngredientsStatus(Integer userId, Integer recipeId, String status) {
+        // 获取该菜谱在购物车中的所有食材
+        List<Object[]> ingredients = shoppingListRepository.findShoppingCartDetailsByUserId(userId);
+
+        for (Object[] ingredient : ingredients) {
+            Integer currentRecipeId = (Integer) ingredient[0];
+            Integer currentIngredientId = (Integer) ingredient[3];
+
+            if (currentRecipeId.equals(recipeId)) {
+                shoppingListRepository.updateIngredientStatus(
+                        userId, recipeId, currentIngredientId, status
+                );
+            }
+        }
+    }
+
+    /**
+     * 获取用户购物车中的菜谱（按菜谱分组），包含食材详情
+     */
+    public List<Map<String, Object>> getGroupedShoppingCartByUserId(Integer userId) {
+        // 调用新的查询方法获取详细数据
+        List<Object[]> results = shoppingListRepository.findGroupedShoppingCartDetails(userId);
+        List<Map<String, Object>> groupedRecipes = new ArrayList<>();
+
+        // 按菜谱ID分组
+        Map<Integer, Map<String, Object>> recipeMap = new HashMap<>();
+
+        for (Object[] row : results) {
+            Integer recipeId = ((Number) row[0]).intValue();
+
+            // 如果这个菜谱还没有添加到map中
+            if (!recipeMap.containsKey(recipeId)) {
+                Map<String, Object> recipeInfo = new HashMap<>();
+                recipeInfo.put("recipeId", recipeId);
+                recipeInfo.put("recipeName", row[1]);
+                recipeInfo.put("imageUrl", row[2]);
+                recipeInfo.put("ingredients", new ArrayList<Map<String, Object>>());
+                recipeMap.put(recipeId, recipeInfo);
+            }
+
+            // 添加食材信息
+            Map<String, Object> ingredientInfo = new HashMap<>();
+            ingredientInfo.put("ingredientId", ((Number) row[3]).intValue());
+            ingredientInfo.put("ingredientName", row[4]);
+            ingredientInfo.put("status", row[5]);
+            ingredientInfo.put("isPurchased", "purchased".equals(row[5]));
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> ingredients = (List<Map<String, Object>>) recipeMap.get(recipeId).get("ingredients");
+            ingredients.add(ingredientInfo);
+        }
+
+        // 计算每个菜谱的购买进度并添加到最终列表
+        for (Map<String, Object> recipeInfo : recipeMap.values()) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> ingredients = (List<Map<String, Object>>) recipeInfo.get("ingredients");
+
+            int totalIngredients = ingredients.size();
+            int purchasedCount = 0;
+
+            for (Map<String, Object> ingredient : ingredients) {
+                if ("purchased".equals(ingredient.get("status"))) {
+                    purchasedCount++;
+                }
+            }
+
+            recipeInfo.put("totalIngredients", totalIngredients);
+            recipeInfo.put("purchasedCount", purchasedCount);
+            recipeInfo.put("progress", totalIngredients > 0 ? (purchasedCount * 100 / totalIngredients) : 0);
+
+            groupedRecipes.add(recipeInfo);
+        }
+
+        return groupedRecipes;
+    }
 }
