@@ -13,4 +13,6 @@ public interface RecipeTagRepository extends JpaRepository<RecipeTag, Integer> {
            "FROM recipe_tag " +
            "WHERE recipe_id=:recipeId", nativeQuery = true)
     List<RecipeTag> findByRecipeId(Integer recipeId);
+
+    List<RecipeTag> findByRecipeIdIn(List<Integer> recipeIds);
 }

@@ -3,6 +3,7 @@ package com.kitchen_manager.entity;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import jakarta.persistence.*;
+import java.util.List;
 
 /**
  * 菜谱表
@@ -56,4 +57,10 @@ public class Recipe {
 
     @Transient
     private double predictScore;            // 预测综合评分
+
+    @Transient
+    private List<RecipeTag> recipeTags;
+
+    @Transient
+    private List<Integer> ingredientIds;
 }

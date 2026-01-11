@@ -32,7 +32,7 @@ public interface UserShoppingListRepository extends JpaRepository<UserShoppingLi
     @Modifying
     @Query(value = "INSERT INTO user_shopping_list (user_id, recipe_id, ingredient_id, status, added_time) " +
             "SELECT :userId, ri.recipe_id, ri.ingredient_id, 'PENDING', CURRENT_TIMESTAMP " +
-            "FROM recipe_ingredient ri WHERE ri.recipe_id = :recipeId",
+            "FROM recipeingredient ri WHERE ri.recipe_id = :recipeId",
             nativeQuery = true)
     int addRecipeIngredientsToCart(@Param("userId") Integer userId, @Param("recipeId") Integer recipeId);
 

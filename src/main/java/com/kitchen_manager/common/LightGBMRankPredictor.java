@@ -3,7 +3,8 @@ package com.kitchen_manager.common;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.*;
-import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,7 +42,9 @@ public class LightGBMRankPredictor {
             return new ArrayList<>();
         }
         // 将特征列表转换为JSON字符串。
-        String featuresJson = objectMapper.writeValueAsString(featureList);
+        File tempFile = File.createTempFile("features_", ".json");
+
+        objectMapper.writeValue(tempFile, featureList);
 
         // 打印调试信息。
         System.out.println("调试信息：");
@@ -49,11 +52,22 @@ public class LightGBMRankPredictor {
         System.out.println("Java端：Python路径：" + pythonPath + "。");
         System.out.println("Python脚本路径：" + pythonScriptPath + "。");
         System.out.println("Java端：模型路径：" + modelPath + "。");
-        System.out.println("Java端：JSON数据：" + featuresJson.substring(0, Math.min(100, featuresJson.length())) + "……");
         // 检查文件是否存在
         File scriptFile = new File(pythonScriptPath);
         File modelFile = new File(modelPath);
         String absoluteModelPath = modelFile.getAbsolutePath();
+
+        // ========= 新增：在脚本同目录创建副本 =========
+        if (scriptFile.getParent() != null) {
+            File localCopy = new File(scriptFile.getParent(), "features_copy.json");
+            try {
+                Files.copy(tempFile.toPath(), localCopy.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("特征文件副本已创建在: " + localCopy.getAbsolutePath());
+            } catch (IOException e) {
+                System.err.println("创建本地副本失败: " + e.getMessage());
+            }
+        }
+        // ========================================
 
         System.out.println("脚本文件存在：" + scriptFile.exists() + "，路径：" + scriptFile.getAbsolutePath());
         System.out.println("模型文件存在：" + modelFile.exists() + "，路径：" + modelFile.getAbsolutePath());
@@ -62,7 +76,7 @@ public class LightGBMRankPredictor {
                 pythonPath,
                 "rank_predictor.py",
                 absoluteModelPath,
-                featuresJson
+                tempFile.getAbsolutePath()
         );
 
         pb.directory(new File(scriptFile.getParent()));
@@ -74,7 +88,7 @@ public class LightGBMRankPredictor {
         StringBuilder output = new StringBuilder();
         StringBuilder errorOutput = new StringBuilder();
 
-        try(BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+        try(BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
 
             while((line=reader.readLine()) != null) {
@@ -100,6 +114,8 @@ public class LightGBMRankPredictor {
         if(result.trim().isEmpty()) {
             throw new RuntimeException("Python脚本没有返回结果。");
         }
+
+        tempFile.delete();
 
         return objectMapper.readValue(result, new TypeReference<>() {});
     }
