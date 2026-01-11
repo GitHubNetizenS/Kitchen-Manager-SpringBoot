@@ -480,7 +480,7 @@ public class RecipeService {
      * @param ctx    用户上下文
      * @return 标签匹配度（0~1）
      */
-    private double calculateTagMatchScore(Recipe recipe, UserFeatureContext ctx) {
+    double calculateTagMatchScore(Recipe recipe, UserFeatureContext ctx) {
         if (recipe == null || ctx == null) {
             return 0.0;
         }
@@ -536,7 +536,7 @@ public class RecipeService {
      * @param ctx 用户上下文
      * @return 原料匹配度（0~1）
      */
-    private double calculateIngredientMatchScore(Recipe recipe, UserFeatureContext ctx) {
+    double calculateIngredientMatchScore(Recipe recipe, UserFeatureContext ctx) {
         if(null==recipe || null==ctx) {
 
             return -1.0;

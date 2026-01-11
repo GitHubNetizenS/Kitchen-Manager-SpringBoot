@@ -15,4 +15,5 @@ public interface RecipeWithFavoriteProjection {
     String getSteps();
     Integer getPopularity();
     Integer getIsFavorite();
+    Integer getInShoppingCart();
 }
