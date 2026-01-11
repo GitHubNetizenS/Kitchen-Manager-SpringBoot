@@ -41,4 +41,6 @@ public interface RecipeIngredientRepository extends JpaRepository<RecipeIngredie
             "FROM RecipeIngredient ri " +
             "GROUP BY ri.ingredientId")
     List<Object[]> countRecipeByIngredient();
+
+    List<RecipeIngredient> findByRecipeIdIn(List<Integer> recipeIds);
 }

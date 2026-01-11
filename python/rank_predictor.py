@@ -1,8 +1,49 @@
 import sys
 import json
+import time
 import traceback
 import numpy as np
 import lightgbm as lgb
+
+def adjust_scores(raw_scores, features):
+    adjusted_scores = raw_scores.copy()
+
+    for i in range(len(raw_scores)):
+        tag_score = features[i][0]
+        #ingredient_score = features[i][1]
+        hot_score = features[i][2]
+
+        # 基础调整：tag和hot的加权
+        # tag_score高于1.0时额外加分（因为经过了1.5倍增强，原始>0.67就会>1.0）
+        tag_bonus = 0.0
+        if tag_score > 1.2:
+            tag_bonus = 0.15
+        elif tag_score > 1.0:
+            tag_bonus = 0.10
+        elif tag_score > 0.8:
+            tag_bonus = 0.05
+
+        # hot_score高于1.5时额外加分（经过了5倍增强）
+        hot_bonus = 0.0
+        if hot_score > 1.5:
+            hot_bonus = 0.10
+        elif hot_score > 1.2:
+            hot_bonus = 0.05
+
+        # 组合调整：如果tag和hot都很高，给额外的协同加成
+        if tag_score > 1.0 and hot_score > 1.2:
+            combo_bonus = 0.08
+        else:
+            combo_bonus = 0.0
+
+        # 总调整不超过原始分数的30%，避免过度干预
+        total_adjustment = tag_bonus + hot_bonus + combo_bonus
+        max_adjustment = abs(raw_scores[i]) * 0.3
+        total_adjustment = min(total_adjustment, max_adjustment)
+
+        adjusted_scores[i] = raw_scores[i] + total_adjustment
+
+    return adjusted_scores
 
 def main():
     try:
@@ -20,18 +61,20 @@ def main():
             sys.exit(1)
 
         model_path = sys.argv[1]
-        features_json = sys.argv[2]
+        features_file_path = sys.argv[2]
 
         print(f"DEBUG: 模型路径: {model_path}", file=sys.stderr)
-        print(f"DEBUG: JSON长度: {len(features_json)}", file=sys.stderr)
 
         # 加载模型
         print("DEBUG: 正在加载模型...", file=sys.stderr)
+        start_time = time.time()
         model = lgb.Booster(model_file=model_path)
+        print(f"TIME: 模型加载耗时: {time.time()-start_time:.2f}秒", file=sys.stderr)
         print("DEBUG: 模型加载成功", file=sys.stderr)
 
         # 解析JSON
-        feature_list = json.loads(features_json)
+        with open(features_file_path, "r") as f:
+            feature_list = json.load(f)
         print(f"DEBUG: 解析到 {len(feature_list)} 个样本", file=sys.stderr)
 
         if not feature_list:
@@ -43,11 +86,17 @@ def main():
         print(f"DEBUG: 输入形状: {X.shape}", file=sys.stderr)
 
         # 预测
-        scores = model.predict(X)
-        print(f"DEBUG: 预测完成，得到 {len(scores)} 个分数", file=sys.stderr)
+        predict_start = time.time()
+        raw_scores = model.predict(X)
+        print(f"TIME: 预测计算耗时: {time.time()-predict_start:.2f}秒", file=sys.stderr)
+        print(f"DEBUG: 预测完成，得到 {len(raw_scores)} 个分数", file=sys.stderr)
 
-        # 输出结果（只输出JSON，不包含调试信息）
-        result = json.dumps(scores.tolist())
+        # 二次排序调整
+        adjusted_scores = adjust_scores(raw_scores, X)
+        print(f"DEBUG: 二次排序完成", file=sys.stderr)
+
+        # 输出调整后的结果
+        result = json.dumps(adjusted_scores.tolist())
         print(result)
 
     except Exception as e:

@@ -5,9 +5,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import jakarta.persistence.*;
+import java.util.List;
 
 import java.util.ArrayList;
-import java.util.List;
 
 /**
  * 菜谱表
@@ -61,6 +61,12 @@ public class Recipe {
 
     @Transient
     private double predictScore;            // 预测综合评分
+
+    @Transient
+    private List<RecipeTag> recipeTags;
+
+    @Transient
+    private List<Integer> ingredientIds;
 
     /**
      * 解析 needs JSON 字段为 List
