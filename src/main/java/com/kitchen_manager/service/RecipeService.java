@@ -1103,5 +1103,127 @@ public class RecipeService {
         return false;
     }
 
+    /**
+     * 获取用户购物车中的菜谱列表（按菜谱分组）
+     */
+    public List<Map<String, Object>> getShoppingCartRecipes(Integer userId) {
+        List<Object[]> results = UserShoppingListRepository.findGroupedShoppingCartByUserId(userId);
+        List<Map<String, Object>> recipes = new ArrayList<>();
 
+        for (Object[] row : results) {
+            Map<String, Object> recipeMap = new HashMap<>();
+            recipeMap.put("recipeId", row[0]);
+            recipeMap.put("recipeName", row[1]);
+            recipeMap.put("imageUrl", row[2]);
+            recipeMap.put("ingredientList", row[3]);
+            recipeMap.put("totalIngredients", row[4]);
+            recipeMap.put("purchasedCount", row[5]);
+
+            // 计算购买进度
+            int total = ((Number) row[4]).intValue();
+            int purchased = ((Number) row[5]).intValue();
+            recipeMap.put("progress", total > 0 ? (purchased * 100 / total) : 0);
+
+            recipes.add(recipeMap);
+        }
+
+        return recipes;
+    }
+
+    /**
+     * 更新购物车中食材的购买状态
+     */
+    @Transactional
+    public void updateCartIngredientStatus(Integer userId, Integer recipeId,
+                                           Integer ingredientId, String status) {
+        shoppingListRepository.updateIngredientStatus(userId, recipeId, ingredientId, status);
+    }
+
+    /**
+     * 删除购物车中的食材
+     */
+    @Transactional
+    public void deleteCartIngredient(Integer userId, Integer recipeId, Integer ingredientId) {
+        shoppingListRepository.deleteIngredientFromCart(userId, recipeId, ingredientId);
+    }
+
+    /**
+     * 批量更新购物车中某个菜谱的所有食材状态
+     */
+    @Transactional
+    public void updateAllIngredientsStatus(Integer userId, Integer recipeId, String status) {
+        // 获取该菜谱在购物车中的所有食材
+        List<Object[]> ingredients = shoppingListRepository.findShoppingCartDetailsByUserId(userId);
+
+        for (Object[] ingredient : ingredients) {
+            Integer currentRecipeId = (Integer) ingredient[0];
+            Integer currentIngredientId = (Integer) ingredient[3];
+
+            if (currentRecipeId.equals(recipeId)) {
+                shoppingListRepository.updateIngredientStatus(
+                        userId, recipeId, currentIngredientId, status
+                );
+            }
+        }
+    }
+
+    /**
+     * 获取用户购物车中的菜谱（按菜谱分组），包含食材详情
+     */
+    public List<Map<String, Object>> getGroupedShoppingCartByUserId(Integer userId) {
+        // 调用新的查询方法获取详细数据
+        List<Object[]> results = shoppingListRepository.findGroupedShoppingCartDetails(userId);
+        List<Map<String, Object>> groupedRecipes = new ArrayList<>();
+
+        // 按菜谱ID分组
+        Map<Integer, Map<String, Object>> recipeMap = new HashMap<>();
+
+        for (Object[] row : results) {
+            Integer recipeId = ((Number) row[0]).intValue();
+
+            // 如果这个菜谱还没有添加到map中
+            if (!recipeMap.containsKey(recipeId)) {
+                Map<String, Object> recipeInfo = new HashMap<>();
+                recipeInfo.put("recipeId", recipeId);
+                recipeInfo.put("recipeName", row[1]);
+                recipeInfo.put("imageUrl", row[2]);
+                recipeInfo.put("ingredients", new ArrayList<Map<String, Object>>());
+                recipeMap.put(recipeId, recipeInfo);
+            }
+
+            // 添加食材信息
+            Map<String, Object> ingredientInfo = new HashMap<>();
+            ingredientInfo.put("ingredientId", ((Number) row[3]).intValue());
+            ingredientInfo.put("ingredientName", row[4]);
+            ingredientInfo.put("status", row[5]);
+            ingredientInfo.put("isPurchased", "purchased".equals(row[5]));
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> ingredients = (List<Map<String, Object>>) recipeMap.get(recipeId).get("ingredients");
+            ingredients.add(ingredientInfo);
+        }
+
+        // 计算每个菜谱的购买进度并添加到最终列表
+        for (Map<String, Object> recipeInfo : recipeMap.values()) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> ingredients = (List<Map<String, Object>>) recipeInfo.get("ingredients");
+
+            int totalIngredients = ingredients.size();
+            int purchasedCount = 0;
+
+            for (Map<String, Object> ingredient : ingredients) {
+                if ("purchased".equals(ingredient.get("status"))) {
+                    purchasedCount++;
+                }
+            }
+
+            recipeInfo.put("totalIngredients", totalIngredients);
+            recipeInfo.put("purchasedCount", purchasedCount);
+            recipeInfo.put("progress", totalIngredients > 0 ? (purchasedCount * 100 / totalIngredients) : 0);
+
+            groupedRecipes.add(recipeInfo);
+        }
+
+        return groupedRecipes;
+    }
 }
