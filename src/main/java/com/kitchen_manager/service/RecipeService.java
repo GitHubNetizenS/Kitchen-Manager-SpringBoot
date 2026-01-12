@@ -425,10 +425,15 @@ public class RecipeService {
         List<List<Double>> featureList = new ArrayList<>();
 
         for(Recipe recipe: candidates) {
+            // 特征增强：必须与generate_csv.py中的变换完全一致
+            double tagScoreEnhanced = Math.pow(recipe.getTagMatchScore(), 0.5) * 1.5;
+            double ingredientScoreEnhanced = Math.pow(recipe.getIngredientMatchScore(), 1.2);
+            double hotScoreEnhanced = recipe.getHotScore() * 5.0;
+
             featureList.add(List.of(
-                    recipe.getTagMatchScore(),
-                    recipe.getIngredientMatchScore(),
-                    recipe.getHotScore()
+                    tagScoreEnhanced,
+                    ingredientScoreEnhanced,
+                    hotScoreEnhanced
             ));
         }
 
