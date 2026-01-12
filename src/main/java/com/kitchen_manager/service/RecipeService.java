@@ -1,7 +1,6 @@
 package com.kitchen_manager.service;
 
 import com.kitchen_manager.common.LightGBMRankHttpPredictor;
-import com.kitchen_manager.common.LightGBMRankPredictor;
 import com.kitchen_manager.dto.HistoryRecipeDTO;
 import com.kitchen_manager.dto.RecipeWithFavoriteProjection;
 import com.kitchen_manager.dto.UserFeatureContext;
@@ -781,78 +780,38 @@ public class RecipeService {
      * 支持口味多选：单选时包含该口味的所有菜谱，多选时包含所有选中口味的菜谱
      */
     public Map<String, Object> getFilteredRecipesWithFavoriteStatus(
-            String taste, String method, String difficulty, String sort,
-            Integer userId, int page, int pageSize) {
+            String taste, String method, String difficulty, String sort, Integer userId, int page, int pageSize) {
 
-        try {
-            if (userId == null) {
-                userId = 0;
-            }
+        // 处理taste: 逗号分隔转list，用于交集
+        List<String> tasteList = taste.isEmpty() ? new ArrayList<>() : Arrays.asList(taste.split(","));
 
-            // 计算偏移量
-            int offset = (page - 1) * pageSize;
+        // 过滤recipes (use findAll then filter, reuse existing findAllOrderByPopularity but ignore order)
+        List<Recipe> allRecipes = recipeRepository.findAllOrderByPopularity(); // 复用现有方法, ignore order
+        List<Recipe> filteredRecipes = allRecipes.stream()
+                .filter(r -> (tasteList.isEmpty() || tasteList.stream().allMatch(t -> r.getTaste().contains(t)))) // 交集 contains
+                .filter(r -> (method.isEmpty() || r.getMethod().contains(method)))
+                .filter(r -> (difficulty.isEmpty() || r.getDifficulty().contains(difficulty)))
+                .collect(Collectors.toList());
 
-            // 先获取过滤后的recipeIds
-            List<Integer> filteredRecipeIds = recipeRepository.findFilteredRecipeIds(
-                    taste, method, difficulty, offset, pageSize);
+        // 固定排序: 使用热度 DESC (popularity)
+        List<Recipe> sortedRecipes = filteredRecipes.stream()
+                .sorted(Comparator.comparingInt(Recipe::getPopularity).reversed())
+                .collect(Collectors.toList());
 
-            // 获取总数
-            long total = recipeRepository.countFilteredRecipes(taste, method, difficulty);
+        // 分页, 复用standard
+        int total = sortedRecipes.size();
+        int from = (page - 1) * pageSize;
+        int to = Math.min(from + pageSize, total);
+        List<Recipe> pagedRecipes = sortedRecipes.subList(from, to);
 
-            if (filteredRecipeIds.isEmpty()) {
-                Map<String, Object> result = new HashMap<>();
-                result.put("recipes", new ArrayList<>());
-                result.put("currentPage", page);
-                result.put("pageSize", pageSize);
-                result.put("total", total);
-                result.put("totalPages", (int) Math.ceil((double) total / pageSize));
-                return result;
-            }
+        // 复用getRecipesWithFavoriteAndCartStatus from existing (assume from getRecipeListWithCartStatus)
+        List<Map<String, Object>> recipesWithStatus = recipeRepository.findByRecipeIdsWithFavoriteAndCartStatus(
+                pagedRecipes.stream().map(Recipe::getRecipeId).collect(Collectors.toList()), userId); // assume reuse findByTagIdWithFavoriteAndCartStatus with no tag
 
-            // 根据sort排序recipeIds
-            List<Integer> sortedRecipeIds = sortRecipeIds(filteredRecipeIds, sort, userId);
-
-            // 获取菜谱详情（带收藏状态）
-            List<Map<String, Object>> recipes = recipeRepository.findByIdsWithFavoriteStatus(sortedRecipeIds, userId);
-
-            // 格式化isFavorite为boolean
-            List<Map<String, Object>> formattedRecipes = new ArrayList<>();
-            for (Map<String, Object> recipe : recipes) {
-                Map<String, Object> mutableRecipe = new HashMap<>(recipe);
-                Object favoriteValue = mutableRecipe.get("isFavorite");
-                boolean isFavorite = false;
-                if (favoriteValue != null) {
-                    if (favoriteValue instanceof Number) {
-                        isFavorite = ((Number) favoriteValue).intValue() == 1;
-                    } else if (favoriteValue instanceof Boolean) {
-                        isFavorite = (Boolean) favoriteValue;
-                    }
-                }
-                mutableRecipe.put("isFavorite", isFavorite);
-                formattedRecipes.add(mutableRecipe);
-            }
-
-            int totalPages = (int) Math.ceil((double) total / pageSize);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("recipes", formattedRecipes);
-            result.put("currentPage", page);
-            result.put("pageSize", pageSize);
-            result.put("total", total);
-            result.put("totalPages", totalPages);
-
-            return result;
-
-        } catch (Exception e) {
-            // 如果主方法失败，尝试使用备用方法
-            try {
-                return getFilteredRecipesWithFavoriteStatusBackup(
-                        taste, method, difficulty, sort, userId, page, pageSize);
-            } catch (Exception ex) {
-                e.printStackTrace();
-                throw new RuntimeException("获取过滤菜谱失败: " + e.getMessage());
-            }
-        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("recipes", recipesWithStatus);
+        result.put("total_count", total);
+        return result;
     }
 
     /**

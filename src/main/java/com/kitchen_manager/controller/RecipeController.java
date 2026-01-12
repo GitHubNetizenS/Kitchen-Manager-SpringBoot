@@ -20,13 +20,12 @@ public class RecipeController {
     private final IngredientRepository ingredientRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
 
-    // 在类中添加新方法
     @GetMapping("/recipes/filter")
     public ApiResponse<Map<String, Object>> getFilteredRecipes(
             @RequestParam(value = "taste", required = false, defaultValue = "") String taste,
             @RequestParam(value = "method", required = false, defaultValue = "") String method,
             @RequestParam(value = "difficulty", required = false, defaultValue = "") String difficulty,
-            @RequestParam(value = "sort", defaultValue = "all") String sort,
+            @RequestParam(value = "sort", required = false, defaultValue = "all") String sort,
             @RequestParam(value = "user_id", required = false) Integer userId,
             @RequestParam(value = "page", defaultValue = "1") int page,
             @RequestParam(value = "page_size", defaultValue = "20") int pageSize) {
@@ -43,6 +42,7 @@ public class RecipeController {
             return ApiResponse.error("获取过滤菜谱失败: " + e.getMessage());
         }
     }
+
 
     /**
      * 获取菜谱相关视频

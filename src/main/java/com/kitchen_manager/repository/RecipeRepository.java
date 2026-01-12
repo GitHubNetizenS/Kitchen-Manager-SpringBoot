@@ -14,6 +14,51 @@ import java.util.Map;
 @Repository
 public interface RecipeRepository extends JpaRepository<Recipe, Integer> {
 
+    // 新增方法：按 recipeIds 查询带状态的菜谱（复用现有查询模式）
+    @Query(value = "SELECT DISTINCT " +
+            "r.recipe_id, " +
+            "r.name, " +
+            "r.image_url, " +
+            "r.taste, " +
+            "r.method, " +
+            "r.time, " +
+            "r.difficulty, " +
+            "r.needs, " +
+            "r.steps, " +
+            "r.popularity, " +
+            "CASE WHEN ufr.id IS NOT NULL THEN 1 ELSE 0 END as isFavorite, " +
+            "CASE WHEN usl.id IS NOT NULL THEN 1 ELSE 0 END as inShoppingCart " +
+            "FROM recipe r " +
+            "LEFT JOIN userfavoriterecipe ufr ON r.recipe_id = ufr.recipe_id AND ufr.user_id = :userId " +
+            "LEFT JOIN user_shopping_list usl ON r.recipe_id = usl.recipe_id AND usl.user_id = :userId " +
+            "WHERE r.recipe_id IN (:recipeIds) " +
+            "ORDER BY r.popularity DESC", nativeQuery = true)
+    List<Map<String, Object>> findByRecipeIdsWithFavoriteAndCartStatus(
+            @Param("recipeIds") List<Integer> recipeIds,
+            @Param("userId") Integer userId);
+
+    @Query(value = "SELECT * FROM recipe r WHERE 1=1 " +
+            "AND (:taste IS NULL OR :taste = '' OR " +
+            "   (CASE WHEN :taste LIKE '%,%' THEN " +
+            "       (SELECT COUNT(*) FROM (VALUES " +
+            "           " /* split taste and AND LIKE */ +
+            "       ) ) ELSE r.taste LIKE CONCAT('%', :taste, '%') END)) " +
+            "AND (:method IS NULL OR :method = '' OR r.method LIKE CONCAT('%', :method, '%')) " +
+            "AND (:difficulty IS NULL OR :difficulty = '' OR r.difficulty LIKE CONCAT('%', :difficulty, '%'))",
+            nativeQuery = true)
+    List<Recipe> findFilteredRecipes(
+            @Param("taste") String taste,
+            @Param("method") String method,
+            @Param("difficulty") String difficulty
+    );
+
+    @Query(value = "SELECT * FROM recipe r WHERE 1=1 " +
+            "AND ( :taste IS NULL OR :taste = '' OR r.taste LIKE %:taste%) " + // 但for multi, need dynamic
+            "AND ( :method IS NULL OR :method = '' OR r.method LIKE %:method%) " +
+            "AND ( :difficulty IS NULL OR :difficulty = '' OR r.difficulty LIKE %:difficulty%) ", nativeQuery = true)
+    List<Recipe> findByFilters(@Param("taste") String taste, @Param("method") String method, @Param("difficulty") String difficulty);
+
+
     @Query("SELECT r FROM Recipe r ORDER BY r.popularity DESC")
     List<Recipe> findAllOrderByPopularity();
 
