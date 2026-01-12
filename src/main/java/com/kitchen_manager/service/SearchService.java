@@ -1,5 +1,6 @@
 package com.kitchen_manager.service;
 
+import com.kitchen_manager.common.LightGBMRankHttpPredictor;
 import com.kitchen_manager.common.LightGBMRankPredictor;
 import com.kitchen_manager.dto.UserFeatureContext;
 import com.kitchen_manager.elasticsearch.RecipeDocument;
@@ -26,6 +27,8 @@ public class SearchService {
     private final UserTagRepository userTagRepository;
     private final UserIngredientRepository userIngredientRepository;
     private final IngredientIdfRepository ingredientIdfRepository;
+    private final RecipeTagRepository recipeTagRepository;
+    private final RecipeIngredientRepository recipeIngredientRepository;
 
     /**
      * 搜索菜谱并排序
@@ -99,51 +102,96 @@ public class SearchService {
     }
 
     /**
-     * 综合排序：使用 LightGBM 模型（复用首页推荐算法）
+     * 综合排序：使用 LightGBM HTTP 服务（复用新版特征计算与候选集逻辑）
      */
     private List<Recipe> sortByLightGBM(List<Recipe> recipes, Integer userId) {
         UserFeatureContext ctx = buildUserFeatureContext(userId);
 
-        if (userId == null || userId <= 0) {
-            // 未登录用户，按热度排序
-            recipes.sort((r1, r2) -> Integer.compare(r2.getPopularity(), r1.getPopularity()));
+        if (recipes == null || recipes.isEmpty() || userId == null) {
             return recipes;
         }
 
-        // 计算三个特征
-        List<List<Double>> featureList = new ArrayList<>();
+        // 1. 预加载标签与原料，避免 N+1 查询
+        Map<Integer, List<RecipeTag>> recipeTagMap =
+                recipeTagRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(RecipeTag::getRecipeId));
+
+        Map<Integer, List<Integer>> recipeIngredientMap =
+                recipeIngredientRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(
+                        RecipeIngredient::getRecipeId,
+                        Collectors.mapping(RecipeIngredient::getIngredientId, Collectors.toList())
+                ));
 
         for (Recipe recipe : recipes) {
-            // ① 标签匹配度
-            double tagScore = recipeService.calculateTagMatchScore(recipe, ctx);
-            recipe.setTagMatchScore(tagScore);
-
-            // ② 原料匹配度
-            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, ctx);
-            recipe.setIngredientMatchScore(ingredientScore);
-
-            // ③ 热度特征
-            double hotScore = Math.log(1 + recipe.getPopularity());
-            recipe.setHotScore(hotScore);
-
-            featureList.add(Arrays.asList(tagScore, ingredientScore, hotScore));
+            recipe.setRecipeTags(recipeTagMap.getOrDefault(recipe.getRecipeId(), List.of()));
+            recipe.setIngredientIds(recipeIngredientMap.getOrDefault(recipe.getRecipeId(), List.of()));
         }
 
-        // 调用 Python 模型预测
-        LightGBMRankPredictor predictor = new LightGBMRankPredictor(
-                "D:\\python3.12\\python.exe",
-                "python\\rank_predictor.py",
-                "python\\lightgbm_rank_model.txt"
+        // 2. 计算特征
+        for (Recipe recipe : recipes) {
+            double tagScore = recipeService.calculateTagMatchScore(recipe, ctx);
+            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, ctx);
+            double hotScore = Math.log(1 + recipe.getPopularity()) / 10.0;
+
+            recipe.setTagMatchScore(tagScore);
+            recipe.setIngredientMatchScore(ingredientScore);
+            recipe.setHotScore(hotScore);
+        }
+
+        // 3. 构造候选集（与代码段 C 保持一致）
+        List<Recipe> ingredientPositive = recipes.stream()
+                .filter(r -> r.getIngredientMatchScore() > 0.0)
+                .sorted(Comparator.comparingDouble(Recipe::getIngredientMatchScore).reversed())
+                .limit(60)
+                .toList();
+
+        List<Recipe> ingredientZeroTop = recipes.stream()
+                .filter(r -> r.getIngredientMatchScore() == 0.0)
+                .sorted(Comparator.comparingDouble(
+                        (Recipe r) -> r.getTagMatchScore() * 0.6 + r.getHotScore() * 0.4
+                ).reversed())
+                .limit(20)
+                .toList();
+
+        List<Recipe> candidates = new ArrayList<>();
+        candidates.addAll(ingredientPositive);
+        candidates.addAll(ingredientZeroTop);
+
+        // 去重
+        candidates = new ArrayList<>(
+                candidates.stream()
+                        .collect(Collectors.toMap(
+                                Recipe::getRecipeId,
+                                r -> r,
+                                (a, b) -> a
+                        ))
+                        .values()
         );
+
+        // 4. 构建模型特征输入
+        List<List<Double>> featureList = new ArrayList<>();
+        for (Recipe recipe : candidates) {
+            featureList.add(List.of(
+                    recipe.getTagMatchScore(),
+                    recipe.getIngredientMatchScore(),
+                    recipe.getHotScore()
+            ));
+        }
+
+        // 5. 调用 LightGBM HTTP 服务
+        LightGBMRankHttpPredictor predictor =
+                new LightGBMRankHttpPredictor("http://localhost:5000");
 
         List<Double> scores;
         try {
             scores = predictor.predictScores(featureList);
         } catch (Exception e) {
-            System.err.println("LightGBM模型预测失败，降级到简单加权: " + e.getMessage());
-            // 降级策略：简单加权
+            // 降级：简单加权
             scores = new ArrayList<>();
-            for (Recipe recipe : recipes) {
+            for (Recipe recipe : candidates) {
                 double score = recipe.getTagMatchScore() * 0.4
                         + recipe.getIngredientMatchScore() * 0.4
                         + recipe.getHotScore() * 0.2;
@@ -151,15 +199,18 @@ public class SearchService {
             }
         }
 
-        // 设置预测分数并排序
-        for (int i = 0; i < recipes.size(); i++) {
-            recipes.get(i).setPredictScore(scores.get(i));
+        // 6. 设置预测分数并排序
+        for (int i = 0; i < candidates.size(); i++) {
+            candidates.get(i).setPredictScore(scores.get(i));
         }
 
-        recipes.sort((r1, r2) -> Double.compare(r2.getPredictScore(), r1.getPredictScore()));
+        candidates.sort((r1, r2) ->
+                Double.compare(r2.getPredictScore(), r1.getPredictScore())
+        );
 
-        return recipes;
+        return candidates;
     }
+
 
     /**
      * 只按标签匹配度排序
@@ -167,10 +218,31 @@ public class SearchService {
     private List<Recipe> sortByTagMatchOnly(List<Recipe> recipes, Integer userId) {
         UserFeatureContext ctx = buildUserFeatureContext(userId);
 
+        if (recipes == null || recipes.isEmpty()) {
+            return recipes;
+        }
+
         if (userId == null || userId <= 0) {
             // 未登录用户，按热度排序
             recipes.sort((r1, r2) -> Integer.compare(r2.getPopularity(), r1.getPopularity()));
             return recipes;
+        }
+
+        Map<Integer, List<RecipeTag>> recipeTagMap =
+                recipeTagRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(RecipeTag::getRecipeId));
+
+        Map<Integer, List<Integer>> recipeIngredientMap =
+                recipeIngredientRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(
+                        RecipeIngredient::getRecipeId,
+                        Collectors.mapping(RecipeIngredient::getIngredientId, Collectors.toList())
+                ));
+        for(Recipe recipe: recipes) {
+            recipe.setRecipeTags(recipeTagMap.getOrDefault(recipe.getRecipeId(), List.of()));
+            recipe.setIngredientIds(recipeIngredientMap.getOrDefault(recipe.getRecipeId(), List.of()));
         }
 
         // 计算标签匹配度
@@ -191,10 +263,31 @@ public class SearchService {
     private List<Recipe> sortByIngredientMatchOnly(List<Recipe> recipes, Integer userId) {
         UserFeatureContext ctx = buildUserFeatureContext(userId);
 
+        if (recipes == null || recipes.isEmpty()) {
+            return recipes;
+        }
+
         if (userId == null || userId <= 0) {
             // 未登录用户，按热度排序
             recipes.sort((r1, r2) -> Integer.compare(r2.getPopularity(), r1.getPopularity()));
             return recipes;
+        }
+
+        Map<Integer, List<RecipeTag>> recipeTagMap =
+                recipeTagRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(RecipeTag::getRecipeId));
+
+        Map<Integer, List<Integer>> recipeIngredientMap =
+                recipeIngredientRepository.findByRecipeIdIn(
+                        recipes.stream().map(Recipe::getRecipeId).toList()
+                ).stream().collect(Collectors.groupingBy(
+                        RecipeIngredient::getRecipeId,
+                        Collectors.mapping(RecipeIngredient::getIngredientId, Collectors.toList())
+                ));
+        for(Recipe recipe: recipes) {
+            recipe.setRecipeTags(recipeTagMap.getOrDefault(recipe.getRecipeId(), List.of()));
+            recipe.setIngredientIds(recipeIngredientMap.getOrDefault(recipe.getRecipeId(), List.of()));
         }
 
         // 计算原料匹配度

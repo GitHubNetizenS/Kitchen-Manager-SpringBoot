@@ -28,6 +28,9 @@ public class RecipeDocument {
     @Field(type = FieldType.Keyword)
     private String difficulty;  // 难度
 
+    @Field(type = FieldType.Keyword)
+    private String time;
+
     @Field(type = FieldType.Integer)
     private Integer popularity;  // 热度
 

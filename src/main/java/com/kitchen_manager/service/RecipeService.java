@@ -28,11 +28,31 @@ public class RecipeService {
     private final RecipeIngredientRepository recipeIngredientRepository;
     private final IngredientIdfRepository ingredientIdfRepository;
     private final UserShoppingListRepository shoppingListRepository;
+    private final RecipeVideoRepository recipeVideoRepository;
 
     private final ElasticsearchSyncService elasticsearchSyncService;
 
     public Recipe getRecipeDetail(Integer recipeId) {
         return recipeRepository.findById(recipeId).orElse(null);
+    }
+
+    /**
+     * 根据菜谱ID获取视频列表
+     */
+    public List<RecipeVideo> getVideosByRecipeId(Integer recipeId) {
+        try {
+            List<RecipeVideo> videos = recipeVideoRepository.findByRecipeId(recipeId);
+            return videos;
+        } catch (Exception e) {
+            throw new RuntimeException("获取视频失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 检查菜谱是否有视频
+     */
+    public boolean hasVideo(Integer recipeId) {
+        return recipeVideoRepository.existsByRecipeId(recipeId);
     }
 
     /**
@@ -405,10 +425,15 @@ public class RecipeService {
         List<List<Double>> featureList = new ArrayList<>();
 
         for(Recipe recipe: candidates) {
+            // 特征增强：必须与generate_csv.py中的变换完全一致
+            double tagScoreEnhanced = Math.pow(recipe.getTagMatchScore(), 0.5) * 1.5;
+            double ingredientScoreEnhanced = Math.pow(recipe.getIngredientMatchScore(), 1.2);
+            double hotScoreEnhanced = recipe.getHotScore() * 5.0;
+
             featureList.add(List.of(
-                    recipe.getTagMatchScore(),
-                    recipe.getIngredientMatchScore(),
-                    recipe.getHotScore()
+                    tagScoreEnhanced,
+                    ingredientScoreEnhanced,
+                    hotScoreEnhanced
             ));
         }
 

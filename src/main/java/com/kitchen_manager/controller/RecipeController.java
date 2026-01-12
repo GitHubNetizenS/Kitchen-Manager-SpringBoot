@@ -45,6 +45,22 @@ public class RecipeController {
     }
 
     /**
+     * 获取菜谱相关视频
+     * GET /api/recipe/videos
+     */
+    @GetMapping("/recipe/videos")
+    public ApiResponse<List<RecipeVideo>> getRecipeVideos(
+            @RequestParam("recipe_id") Integer recipeId) {
+        try {
+            List<RecipeVideo> videos = recipeService.getVideosByRecipeId(recipeId);
+            return ApiResponse.success(videos);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("获取视频失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 获取菜谱详情（包含收藏状态）
      * GET /api/recipedetail
      */

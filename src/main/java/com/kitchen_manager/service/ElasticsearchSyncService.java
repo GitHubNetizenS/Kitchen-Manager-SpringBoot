@@ -65,6 +65,7 @@ public class ElasticsearchSyncService {
         doc.setTaste(recipe.getTaste());
         doc.setMethod(recipe.getMethod());
         doc.setDifficulty(recipe.getDifficulty());
+        doc.setTime(recipe.getTime());
         doc.setPopularity(recipe.getPopularity());
         doc.setImageUrl(recipe.getImageUrl());
 

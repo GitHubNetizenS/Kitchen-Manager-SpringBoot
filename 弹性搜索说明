@@ -1,4 +1,0 @@
-elasticsearch-9.2.2.zip解压
-打开bin/elasticsearch.bat
-浏览器访问localhost:9200测试是否成功运行
-启动spring boot项目
