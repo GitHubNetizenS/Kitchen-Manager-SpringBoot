@@ -21,8 +21,8 @@ public class UserShoppingList {
     @Column(name = "ingredient_id")
     private Integer ingredientId;
 
-    @Enumerated(EnumType.STRING)
-    private ShoppingStatus status = ShoppingStatus.PENDING;
+    @Column(name = "status")
+    private String status = "pending";
 
     @Column(name = "added_time")
     private Timestamp addedTime;

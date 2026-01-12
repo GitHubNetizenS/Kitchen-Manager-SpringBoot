@@ -1,6 +1,5 @@
 import sys
 import json
-import time
 import traceback
 import numpy as np
 import lightgbm as lgb
@@ -67,9 +66,7 @@ def main():
 
         # 加载模型
         print("DEBUG: 正在加载模型...", file=sys.stderr)
-        start_time = time.time()
         model = lgb.Booster(model_file=model_path)
-        print(f"TIME: 模型加载耗时: {time.time()-start_time:.2f}秒", file=sys.stderr)
         print("DEBUG: 模型加载成功", file=sys.stderr)
 
         # 解析JSON
@@ -86,9 +83,7 @@ def main():
         print(f"DEBUG: 输入形状: {X.shape}", file=sys.stderr)
 
         # 预测
-        predict_start = time.time()
         raw_scores = model.predict(X)
-        print(f"TIME: 预测计算耗时: {time.time()-predict_start:.2f}秒", file=sys.stderr)
         print(f"DEBUG: 预测完成，得到 {len(raw_scores)} 个分数", file=sys.stderr)
 
         # 二次排序调整
