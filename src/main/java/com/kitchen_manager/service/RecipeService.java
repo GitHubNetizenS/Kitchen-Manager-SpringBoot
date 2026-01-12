@@ -1136,7 +1136,27 @@ public class RecipeService {
     @Transactional
     public void updateCartIngredientStatus(Integer userId, Integer recipeId,
                                            Integer ingredientId, String status) {
-        shoppingListRepository.updateIngredientStatus(userId, recipeId, ingredientId, status);
+        try {
+            // 1. 直接使用小写字符串，因为数据库里存的就是小写
+            String statusLowerCase = status.toLowerCase();
+
+            if (!"pending".equals(statusLowerCase) && !"purchased".equals(statusLowerCase)) {
+                throw new RuntimeException("无效的状态值: " + status);
+            }
+
+            System.out.println("更新状态为: " + statusLowerCase);
+
+            // 2. 更新购物车状态
+            shoppingListRepository.updateIngredientStatus(userId, recipeId, ingredientId, statusLowerCase);
+
+            // 3. 如果状态为'purchased'，将食材添加到用户库存
+            if ("purchased".equals(statusLowerCase)) {
+                addOrUpdateUserIngredient(userId, ingredientId);
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("更新状态失败: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -1189,6 +1209,10 @@ public class RecipeService {
                 recipeInfo.put("imageUrl", row[2]);
                 recipeInfo.put("ingredients", new ArrayList<Map<String, Object>>());
                 recipeMap.put(recipeId, recipeInfo);
+                // 获取并保存添加时间
+                if (row.length > 6 && row[6] != null) {
+                    recipeInfo.put("latestAddedTime", row[6]);
+                }
             }
 
             // 添加食材信息
@@ -1197,6 +1221,7 @@ public class RecipeService {
             ingredientInfo.put("ingredientName", row[4]);
             ingredientInfo.put("status", row[5]);
             ingredientInfo.put("isPurchased", "purchased".equals(row[5]));
+
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> ingredients = (List<Map<String, Object>>) recipeMap.get(recipeId).get("ingredients");
@@ -1225,5 +1250,41 @@ public class RecipeService {
         }
 
         return groupedRecipes;
+    }
+
+    /**
+     * 添加或更新用户库存中的食材
+     */
+    @Transactional
+    public void addOrUpdateUserIngredient(Integer userId, Integer ingredientId) {
+        try {
+            // 检查是否已存在
+            Optional<UserIngredient> existingIngredient =
+                    userIngredientRepository.findByUserIdAndIngredientId(userId, ingredientId);
+
+            Timestamp now = new Timestamp(System.currentTimeMillis());
+
+            if (existingIngredient.isPresent()) {
+                // 如果已存在，更新存储时间（覆盖）
+                UserIngredient userIngredient = existingIngredient.get();
+                userIngredient.setStorageTime(now);
+                userIngredient.setQuantity(1);
+                userIngredientRepository.save(userIngredient);
+                System.out.println("更新了用户 " + userId + " 的食材 " + ingredientId + " 库存时间");
+            } else {
+                // 如果不存在，创建新记录
+                UserIngredient userIngredient = new UserIngredient();
+                userIngredient.setUserId(userId);
+                userIngredient.setIngredientId(ingredientId);
+                userIngredient.setQuantity(1);
+                userIngredient.setStorageTime(now);
+                userIngredient.setCustomExpiryDays(null);
+
+                userIngredientRepository.save(userIngredient);
+                System.out.println("为用户 " + userId + " 添加了食材 " + ingredientId + " 到库存");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("更新用户库存失败: " + e.getMessage(), e);
+        }
     }
 }

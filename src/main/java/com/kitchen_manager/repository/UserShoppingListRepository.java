@@ -61,8 +61,9 @@ public interface UserShoppingListRepository extends JpaRepository<UserShoppingLi
     // 更新购物车中食材的购买状态
     @Transactional
     @Modifying
-    @Query("UPDATE UserShoppingList s SET s.status = :status " +
-            "WHERE s.userId = :userId AND s.recipeId = :recipeId AND s.ingredientId = :ingredientId")
+    @Query(value = "UPDATE user_shopping_list SET status = :status " +
+            "WHERE user_id = :userId AND recipe_id = :recipeId AND ingredient_id = :ingredientId",
+            nativeQuery = true)
     void updateIngredientStatus(@Param("userId") Integer userId,
                                 @Param("recipeId") Integer recipeId,
                                 @Param("ingredientId") Integer ingredientId,
@@ -96,19 +97,21 @@ public interface UserShoppingListRepository extends JpaRepository<UserShoppingLi
         return null;
     }
 
-    // 获取用户购物车的详细信息（按菜谱分组）
+    // 获取用户购物车的详细信息（按菜谱分组，按添加时间降序排列）
     @Query(value = "SELECT " +
             "   usl.recipe_id as recipeId, " +
             "   r.name as recipeName, " +
             "   r.image_url as imageUrl, " +
             "   usl.ingredient_id as ingredientId, " +
             "   i.name as ingredientName, " +
-            "   usl.status as status " +
+            "   usl.status as status, " +
+            "   MAX(usl.added_time) as latestAddedTime " +
             "FROM user_shopping_list usl " +
             "JOIN recipe r ON usl.recipe_id = r.recipe_id " +
             "JOIN ingredient i ON usl.ingredient_id = i.ingredient_id " +
             "WHERE usl.user_id = :userId " +
-            "ORDER BY usl.added_time DESC, usl.recipe_id, usl.ingredient_id",
+            "GROUP BY usl.recipe_id, usl.ingredient_id, r.name, r.image_url, i.name, usl.status " +  // 将所有非聚合列添加到GROUP BY
+            "ORDER BY MAX(usl.added_time) DESC, usl.recipe_id, usl.ingredient_id",  // 添加额外的排序条件
             nativeQuery = true)
     List<Object[]> findGroupedShoppingCartDetails(@Param("userId") Integer userId);
 }
