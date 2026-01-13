@@ -28,6 +28,7 @@ public class RecipeService {
     private final IngredientIdfRepository ingredientIdfRepository;
     private final UserShoppingListRepository shoppingListRepository;
     private final RecipeVideoRepository recipeVideoRepository;
+    private final SearchService searchService;
 
     private final ElasticsearchSyncService elasticsearchSyncService;
 
@@ -780,37 +781,48 @@ public class RecipeService {
      * 支持口味多选：单选时包含该口味的所有菜谱，多选时包含所有选中口味的菜谱
      */
     public Map<String, Object> getFilteredRecipesWithFavoriteStatus(
-            String taste, String method, String difficulty, String sort, Integer userId, int page, int pageSize) {
+            String taste, String method, String difficulty, String sort,
+            Integer userId, int page, int pageSize) {
 
-        // 处理taste: 逗号分隔转list，用于交集
+        // 处理taste: 逗号分隔转list
         List<String> tasteList = taste.isEmpty() ? new ArrayList<>() : Arrays.asList(taste.split(","));
 
-        // 过滤recipes (use findAll then filter, reuse existing findAllOrderByPopularity but ignore order)
-        List<Recipe> allRecipes = recipeRepository.findAllOrderByPopularity(); // 复用现有方法, ignore order
+        // 1. 获取所有菜谱（或根据其他条件筛选）
+        List<Recipe> allRecipes = recipeRepository.findAll();
+
+        // 2. 应用筛选条件（使用之前的交集逻辑）
         List<Recipe> filteredRecipes = allRecipes.stream()
-                .filter(r -> (tasteList.isEmpty() || tasteList.stream().allMatch(t -> r.getTaste().contains(t)))) // 交集 contains
-                .filter(r -> (method.isEmpty() || r.getMethod().contains(method)))
-                .filter(r -> (difficulty.isEmpty() || r.getDifficulty().contains(difficulty)))
+                .filter(r -> tasteList.isEmpty() ||
+                        tasteList.stream().allMatch(t -> r.getTaste().contains(t))) // 交集
+                .filter(r -> method.isEmpty() || r.getMethod().contains(method))
+                .filter(r -> difficulty.isEmpty() || r.getDifficulty().contains(difficulty))
                 .collect(Collectors.toList());
 
-        // 固定排序: 使用热度 DESC (popularity)
-        List<Recipe> sortedRecipes = filteredRecipes.stream()
-                .sorted(Comparator.comparingInt(Recipe::getPopularity).reversed())
-                .collect(Collectors.toList());
+        // 3. 继续使用SearchService排序
+        List<Recipe> sortedRecipes = searchService.sortFilteredRecipes(filteredRecipes, sort, userId);
 
-        // 分页, 复用standard
+        // 3. 分页处理
         int total = sortedRecipes.size();
         int from = (page - 1) * pageSize;
         int to = Math.min(from + pageSize, total);
         List<Recipe> pagedRecipes = sortedRecipes.subList(from, to);
 
-        // 复用getRecipesWithFavoriteAndCartStatus from existing (assume from getRecipeListWithCartStatus)
-        List<Map<String, Object>> recipesWithStatus = recipeRepository.findByRecipeIdsWithFavoriteAndCartStatus(
-                pagedRecipes.stream().map(Recipe::getRecipeId).collect(Collectors.toList()), userId); // assume reuse findByTagIdWithFavoriteAndCartStatus with no tag
+        // 4. 获取收藏和购物车状态
+        List<Integer> recipeIds = pagedRecipes.stream()
+                .map(Recipe::getRecipeId)
+                .collect(Collectors.toList());
 
+        List<Map<String, Object>> recipesWithStatus =
+                recipeRepository.findByRecipeIdsWithFavoriteAndCartStatus(recipeIds, userId);
+
+        // 5. 构建返回结果
         Map<String, Object> result = new HashMap<>();
         result.put("recipes", recipesWithStatus);
         result.put("total_count", total);
+        result.put("current_page", page);
+        result.put("page_size", pageSize);
+        result.put("total_pages", (int) Math.ceil((double) total / pageSize));
+
         return result;
     }
 
@@ -1271,4 +1283,5 @@ public class RecipeService {
             throw new RuntimeException("更新用户库存失败: " + e.getMessage(), e);
         }
     }
+
 }

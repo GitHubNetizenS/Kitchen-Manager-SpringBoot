@@ -7,6 +7,8 @@ import com.kitchen_manager.elasticsearch.RecipeDocument;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.validator.internal.util.stereotypes.Lazy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -22,13 +24,34 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SearchService {
     private final RecipeRepository recipeRepository;
-    private final RecipeService recipeService;
     private final ElasticsearchOperations elasticsearchOperations;
     private final UserTagRepository userTagRepository;
     private final UserIngredientRepository userIngredientRepository;
     private final IngredientIdfRepository ingredientIdfRepository;
     private final RecipeTagRepository recipeTagRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
+    // 添加 ScoreCalculationService 依赖
+    private final ScoreCalculationService scoreCalculationService;
+
+    /**
+     * 为筛选结果排序（复用搜索排序逻辑）
+     */
+    public List<Recipe> sortFilteredRecipes(List<Recipe> recipes, String sortType, Integer userId) {
+        if (recipes == null || recipes.isEmpty()) {
+            return recipes;
+        }
+
+        // 复用搜索页面的排序逻辑
+        switch (sortType) {
+            case "tag_match":
+                return sortByTagMatchOnly(recipes, userId);
+            case "ingredient_match":
+                return sortByIngredientMatchOnly(recipes, userId);
+            case "all":
+            default:
+                return sortByLightGBM(recipes, userId);
+        }
+    }
 
     /**
      * 搜索菜谱并排序
@@ -132,8 +155,8 @@ public class SearchService {
 
         // 2. 计算特征
         for (Recipe recipe : recipes) {
-            double tagScore = recipeService.calculateTagMatchScore(recipe, ctx);
-            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, ctx);
+            double tagScore = scoreCalculationService.calculateTagMatchScore(recipe, ctx);
+            double ingredientScore = scoreCalculationService.calculateIngredientMatchScore(recipe, ctx);
             double hotScore = Math.log(1 + recipe.getPopularity()) / 10.0;
 
             recipe.setTagMatchScore(tagScore);
@@ -247,7 +270,7 @@ public class SearchService {
 
         // 计算标签匹配度
         for (Recipe recipe : recipes) {
-            double tagScore = recipeService.calculateTagMatchScore(recipe, ctx);
+            double tagScore = scoreCalculationService.calculateTagMatchScore(recipe, ctx);
             recipe.setTagMatchScore(tagScore);
         }
 
@@ -292,7 +315,7 @@ public class SearchService {
 
         // 计算原料匹配度
         for (Recipe recipe : recipes) {
-            double ingredientScore = recipeService.calculateIngredientMatchScore(recipe, ctx);
+            double ingredientScore = scoreCalculationService.calculateIngredientMatchScore(recipe, ctx);
             recipe.setIngredientMatchScore(ingredientScore);
         }
 
