@@ -793,9 +793,9 @@ public class RecipeService {
         // 2. 应用筛选条件（使用之前的交集逻辑）
         List<Recipe> filteredRecipes = allRecipes.stream()
                 .filter(r -> tasteList.isEmpty() ||
-                        tasteList.stream().allMatch(t -> r.getTaste().contains(t))) // 交集
-                .filter(r -> method.isEmpty() || r.getMethod().contains(method))
-                .filter(r -> difficulty.isEmpty() || r.getDifficulty().contains(difficulty))
+                        (r.getTaste() != null && tasteList.stream().allMatch(t -> r.getTaste().contains(t))))
+                .filter(r -> method.isEmpty() || (r.getMethod() != null && r.getMethod().contains(method)))
+                .filter(r -> difficulty.isEmpty() || (r.getDifficulty() != null && r.getDifficulty().contains(difficulty)))
                 .collect(Collectors.toList());
 
         // 3. 继续使用SearchService排序
