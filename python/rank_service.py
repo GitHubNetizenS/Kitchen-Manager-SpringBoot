@@ -105,9 +105,6 @@ if __name__ == '__main__':
         sys.exit(1)
 
     model_file = sys.argv[1]
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 5000
-
-    # 启动前加载模型
     gru_model_file = sys.argv[2] if len(sys.argv) > 2 else "gru4rec_model.pth"
     port = int(sys.argv[3]) if len(sys.argv) > 3 else 5000
     init_model(model_file, gru_model_file)
