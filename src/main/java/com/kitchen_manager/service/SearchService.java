@@ -91,14 +91,26 @@ public class SearchService {
      */
     private List<Integer> searchWithElasticsearch(String keyword) {
         try {
-            // ✓ 搜索 name 和 needs
+            // 拆分关键词，支持空格/逗号/顿号分隔
+            String[] keywords = keyword.split("[\\s,，、]+");
+
             Query searchQuery = NativeQuery.builder()
                     .withQuery(q -> q
-                            .multiMatch(m -> m
-                                    .query(keyword)
-                                    .fields("name", "ingredients")  // ingredients 来自 needs
-                                    .fuzziness("AUTO")
-                            )
+                            .bool(b -> {
+                                for (String kw : keywords) {
+                                    if (!kw.isBlank()) {
+                                        b.should(s -> s
+                                                .multiMatch(m -> m
+                                                        .query(kw.trim())
+                                                        .fields("name", "ingredients")
+                                                        .fuzziness("AUTO")
+                                                )
+                                        );
+                                    }
+                                }
+                                b.minimumShouldMatch("1");  // 至少匹配一个词
+                                return b;
+                            })
                     )
                     .withPageable(PageRequest.of(0, 100))
                     .build();
