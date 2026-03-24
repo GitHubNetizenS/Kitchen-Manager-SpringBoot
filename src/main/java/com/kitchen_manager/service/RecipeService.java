@@ -8,6 +8,7 @@ import com.kitchen_manager.dto.RecipeWithStatusDTO;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ public class RecipeService {
     private final UserShoppingListRepository shoppingListRepository;
     private final RecipeVideoRepository recipeVideoRepository;
     private final SearchService searchService;
+    private final UserHistoryRepository userHistoryRepository;
 
     private final ElasticsearchSyncService elasticsearchSyncService;
 
@@ -443,7 +445,18 @@ public class RecipeService {
 
         try {
             long startTime = System.currentTimeMillis();
-            scores = predictor.predictScores(featureList);
+            // 在 featureList 构造完成后新增
+            List<Integer> sessionSeq = userHistoryRepository
+                    .findTopNByUserIdOrderByCookTimeDesc(userId, PageRequest.of(0, 5))
+                    .stream()
+                    .map(UserHistory::getRecipeId)
+                    .collect(Collectors.toList());
+            Collections.reverse(sessionSeq);  // 还原为时间正序
+
+            List<Integer> candidateIds = candidates.stream()
+                    .map(Recipe::getRecipeId)
+                    .toList();
+            scores = predictor.predictScores(featureList, sessionSeq, candidateIds);
             long endTime = System.currentTimeMillis();
             long duration = endTime - startTime;
 
@@ -454,7 +467,7 @@ public class RecipeService {
             System.out.println("Python模型调用失败，启动备用措施：简单加权排序。");
             // 出错时回退到简单加权排序。
             scores = new ArrayList<>();
-            for(Recipe recipe: recipes) {
+            for(Recipe recipe: candidates) {
                 double score = recipe.getTagMatchScore() * 0.4
                         + recipe.getIngredientMatchScore() * 0.4
                         + recipe.getHotScore() * 0.2;

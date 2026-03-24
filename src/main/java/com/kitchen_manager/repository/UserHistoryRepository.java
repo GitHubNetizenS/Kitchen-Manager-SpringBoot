@@ -1,6 +1,7 @@
 package com.kitchen_manager.repository;
 
 import com.kitchen_manager.entity.*;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -35,6 +36,12 @@ public interface UserHistoryRepository extends JpaRepository<UserHistory, Intege
     // 或者使用自定义查询获取完整信息
     @Query("SELECT h FROM UserHistory h WHERE h.userId = :userId ORDER BY h.cookTime DESC")
     List<UserHistory> findUserHistoriesWithIds(@Param("userId") Integer userId);
+
+    @Query("SELECT u FROM UserHistory u WHERE u.userId = :userId ORDER BY u.cookTime DESC")
+    List<UserHistory> findTopNByUserIdOrderByCookTimeDesc(
+            @Param("userId") Integer userId,
+            Pageable pageable
+    );
 
 
 }
