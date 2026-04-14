@@ -12,5 +12,9 @@ public class WebConfig implements WebMvcConfigurer {
         // 将 /uploads/** 映射到项目根目录下的 uploads 文件夹
         registry.addResourceHandler("/uploads/**")
                 .addResourceLocations("file:./uploads/");
+
+        // 也可以使用绝对路径（更可靠）
+        // registry.addResourceHandler("/uploads/**")
+        //         .addResourceLocations("file:" + System.getProperty("user.dir") + "/uploads/");
     }
 }

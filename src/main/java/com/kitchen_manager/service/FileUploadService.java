@@ -40,7 +40,6 @@ public class FileUploadService {
         Path filePath = Paths.get(UPLOAD_DIR + uniqueFilename);
         Files.write(filePath, file.getBytes());
 
-        // 返回访问URL
         return "/uploads/" + uniqueFilename;
     }
 }
