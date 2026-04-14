@@ -41,6 +41,6 @@ public class FileUploadService {
         Files.write(filePath, file.getBytes());
 
         // 返回访问URL
-        return "http://localhost:8080/uploads/" + uniqueFilename;
+        return "/uploads/" + uniqueFilename;
     }
 }
