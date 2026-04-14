@@ -1,14 +1,11 @@
 package com.kitchen_manager.service;
 
 import com.kitchen_manager.common.LightGBMRankHttpPredictor;
-import com.kitchen_manager.common.LightGBMRankPredictor;
 import com.kitchen_manager.dto.UserFeatureContext;
 import com.kitchen_manager.elasticsearch.RecipeDocument;
 import com.kitchen_manager.entity.*;
 import com.kitchen_manager.repository.*;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.validator.internal.util.stereotypes.Lazy;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -30,6 +27,7 @@ public class SearchService {
     private final IngredientIdfRepository ingredientIdfRepository;
     private final RecipeTagRepository recipeTagRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
+    private final UserHistoryRepository userHistoryRepository;
     // 添加 ScoreCalculationService 依赖
     private final ScoreCalculationService scoreCalculationService;
 
@@ -93,14 +91,26 @@ public class SearchService {
      */
     private List<Integer> searchWithElasticsearch(String keyword) {
         try {
-            // ✓ 搜索 name 和 needs
+            // 拆分关键词，支持空格/逗号/顿号分隔
+            String[] keywords = keyword.split("[\\s,，、]+");
+
             Query searchQuery = NativeQuery.builder()
                     .withQuery(q -> q
-                            .multiMatch(m -> m
-                                    .query(keyword)
-                                    .fields("name", "ingredients")  // ingredients 来自 needs
-                                    .fuzziness("AUTO")
-                            )
+                            .bool(b -> {
+                                for (String kw : keywords) {
+                                    if (!kw.isBlank()) {
+                                        b.should(s -> s
+                                                .multiMatch(m -> m
+                                                        .query(kw.trim())
+                                                        .fields("name", "ingredients")
+                                                        .fuzziness("AUTO")
+                                                )
+                                        );
+                                    }
+                                }
+                                b.minimumShouldMatch("1");  // 至少匹配一个词
+                                return b;
+                            })
                     )
                     .withPageable(PageRequest.of(0, 100))
                     .build();
@@ -210,7 +220,16 @@ public class SearchService {
 
         List<Double> scores;
         try {
-            scores = predictor.predictScores(featureList);
+            List<Integer> sessionSeq = userHistoryRepository
+                    .findTopNByUserIdOrderByCookTimeDesc(userId, PageRequest.of(0, 5))
+                    .stream()
+                    .map(UserHistory::getRecipeId)
+                    .collect(Collectors.toList());
+            List<Integer> candidateIds = candidates.stream()
+                    .map(Recipe::getRecipeId)
+                    .toList();
+
+            scores = predictor.predictScores(featureList, sessionSeq, candidateIds);
         } catch (Exception e) {
             // 降级：简单加权
             scores = new ArrayList<>();

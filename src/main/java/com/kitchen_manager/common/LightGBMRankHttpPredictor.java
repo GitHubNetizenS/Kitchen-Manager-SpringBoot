@@ -23,13 +23,16 @@ public class LightGBMRankHttpPredictor {
         this.objectMapper = new ObjectMapper();
     }
 
-    public List<Double> predictScores(List<List<Double>> featureList) throws IOException, InterruptedException {
+    public List<Double> predictScores(List<List<Double>> featureList, List<Integer> sessionSeq, List<Integer> candidateIds) throws IOException, InterruptedException {
         if (featureList == null || featureList.isEmpty()) {
             return List.of();
         }
 
         // 构造请求body
-        Map<String, Object> requestBody = Map.of("features", featureList);
+        Map<String, Object> requestBody = Map.of(
+                "features", featureList,
+                "session_seq", sessionSeq,
+                "candidate_ids", candidateIds);
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
         // 发送HTTP POST请求
