@@ -1,0 +1,6 @@
+FROM m.daocloud.io/docker.io/library/openjdk:22-jdk-slim
+WORKDIR /app
+ENV TZ="Asia/Shanghai"
+COPY kitchen-backend.jar /app/app.jar
+EXPOSE 8080
+CMD ["java", "-Xmx512m", "-jar", "app.jar"]

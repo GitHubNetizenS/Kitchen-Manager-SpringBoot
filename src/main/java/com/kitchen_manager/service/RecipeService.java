@@ -440,7 +440,7 @@ public class RecipeService {
         }
 
         // 调用 Python 模型预测。
-        LightGBMRankHttpPredictor predictor = new LightGBMRankHttpPredictor("http://localhost:5000");
+        LightGBMRankHttpPredictor predictor = new LightGBMRankHttpPredictor("http://python-model:5000");
         List<Double>            scores;
 
         try {

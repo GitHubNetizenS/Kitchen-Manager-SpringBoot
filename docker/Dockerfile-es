@@ -1,0 +1,3 @@
+FROM m.daocloud.io/docker.io/library/elasticsearch:9.2.2
+COPY --chown=elasticsearch:elasticsearch ik /usr/share/elasticsearch/plugins/ik
+COPY --chown=elasticsearch:elasticsearch pinyin /usr/share/elasticsearch/plugins/pinyin

@@ -26,6 +26,15 @@ public class RecipeController {
     private final IngredientRepository ingredientRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
 
+    /**
+     * 基础连接测试接口
+     * GET /api/hello
+     */
+    @GetMapping("/hello")
+    public ApiResponse<String> hello() {
+        return ApiResponse.success("欢迎来到厨房管家，这是一个测试页面！若想体验功能请安装App。", "Test Passed");
+    }
+
     @GetMapping("/recipes/filter")
     public ApiResponse<Map<String, Object>> getFilteredRecipes(
             @RequestParam(value = "taste", required = false, defaultValue = "") String taste,

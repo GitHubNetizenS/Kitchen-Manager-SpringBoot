@@ -1,0 +1,70 @@
+version: "3.8"
+services:
+  mysql:
+    image: m.daocloud.io/docker.io/library/mysql:8.0
+    container_name: kitchen-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "Kitchen_2026_ComplexPassword!"
+      MYSQL_DATABASE: "kitchen-manager"
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: Dockerfile-es
+    container_name: kitchen-es
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  python-model:
+    build: 
+      context: .
+      dockerfile: Dockerfile-python
+    container_name: kitchen-python
+    restart: always
+    ports:
+      - "5000:5000"
+  java-backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile-java
+    container_name: kitchen-java
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      python-model:
+        condition: service_started
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/kitchen-manager?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=Kitchen_2026_ComplexPassword!
+      - SPRING_ELASTICSEARCH_URIS=http://elasticsearch:9200
+volumes:
+  mysql_data:
+  es_data:

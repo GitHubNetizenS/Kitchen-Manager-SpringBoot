@@ -93,7 +93,7 @@ public class ElasticsearchInitializer implements ApplicationRunner {
             log.error("========================================");
 
             if (e.getMessage() != null && e.getMessage().contains("Connection refused")) {
-                log.warn("建议: 请确保 Elasticsearch 服务已启动并运行在 localhost:9200");
+                log.warn("建议: 请确保 Elasticsearch 服务已启动并运行在 elasticsearch:9200");
             } else if (e.getMessage() != null && e.getMessage().contains("media_type_header_exception")) {
                 log.warn("建议: Elasticsearch 版本不兼容，请确认使用正确版本");
             }

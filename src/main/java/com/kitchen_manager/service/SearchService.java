@@ -215,8 +215,7 @@ public class SearchService {
         }
 
         // 5. 调用 LightGBM HTTP 服务
-        LightGBMRankHttpPredictor predictor =
-                new LightGBMRankHttpPredictor("http://localhost:5000");
+        LightGBMRankHttpPredictor predictor = new LightGBMRankHttpPredictor("http://python-model:5000");
 
         List<Double> scores;
         try {
