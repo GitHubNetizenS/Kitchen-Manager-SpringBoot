@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.Timestamp;
 import java.util.List;
 
 @Repository
@@ -114,4 +115,21 @@ public interface UserShoppingListRepository extends JpaRepository<UserShoppingLi
             "ORDER BY MAX(usl.added_time) DESC, usl.recipe_id, usl.ingredient_id",  // 添加额外的排序条件
             nativeQuery = true)
     List<Object[]> findGroupedShoppingCartDetails(@Param("userId") Integer userId);
+
+    // 获取用户购物车中所有不重复的菜谱ID
+    @Query("SELECT DISTINCT s.recipeId FROM UserShoppingList s WHERE s.userId = :userId")
+    List<Integer> findDistinctRecipeIdsByUserId(@Param("userId") Integer userId);
+
+    // 获取用户购物车中某个菜谱的状态为 pending 的食材记录
+    @Query("SELECT s FROM UserShoppingList s WHERE s.userId = :userId AND s.recipeId = :recipeId AND s.status = 'pending'")
+    List<UserShoppingList> findPendingIngredientsByUserAndRecipe(@Param("userId") Integer userId,
+                                                                 @Param("recipeId") Integer recipeId);
+
+    // 获取用户购物车中某个菜谱的最新添加时间（最大 added_time）
+    @Query("SELECT MAX(s.addedTime) FROM UserShoppingList s WHERE s.userId = :userId AND s.recipeId = :recipeId")
+    Timestamp findLatestAddedTimeByUserIdAndRecipeId(@Param("userId") Integer userId,
+                                                     @Param("recipeId") Integer recipeId);
+
+    // 在 UserShoppingListRepository 接口中添加
+    List<UserShoppingList> findByUserIdAndRecipeId(Integer userId, Integer recipeId);
 }

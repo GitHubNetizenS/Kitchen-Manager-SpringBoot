@@ -28,9 +28,7 @@ public interface UserIngredientRepository extends JpaRepository<UserIngredient, 
 
     // 新增：根据用户ID和食材ID查询
     @Query("SELECT ui FROM UserIngredient ui WHERE ui.userId = :userId AND ui.ingredientId = :ingredientId")
-    Optional<UserIngredient> findByUserIdAndIngredientId(
-            @Param("userId") Integer userId,
-            @Param("ingredientId") Integer ingredientId);
+    Optional<UserIngredient> findByUserIdAndIngredientId(Integer userId, Integer ingredientId);
 
     List<Integer> findIngredientIdsByUserId(Integer userId);
 
@@ -43,7 +41,7 @@ public interface UserIngredientRepository extends JpaRepository<UserIngredient, 
     @Query( "SELECT ui " +
             "FROM UserIngredient ui " +
             "WHERE ui.userId=:userId AND ui.quantity=:quantity")
-    List<UserIngredient> findByUserIdAndQuantity(@Param("userId") Integer userId, @Param("quantity") int quantity);
+    List<UserIngredient> findByUserIdAndQuantity(Integer userId, Integer quantity);
 
     // 使用原生SQL查询，直接传递字符串
     @Transactional
