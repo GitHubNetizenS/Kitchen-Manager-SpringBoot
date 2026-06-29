@@ -32,7 +32,7 @@ public interface UserShoppingListRepository extends JpaRepository<UserShoppingLi
     @Transactional
     @Modifying
     @Query(value = "INSERT INTO user_shopping_list (user_id, recipe_id, ingredient_id, status, added_time) " +
-            "SELECT :userId, ri.recipe_id, ri.ingredient_id, 'PENDING', CURRENT_TIMESTAMP " +
+            "SELECT :userId, ri.recipe_id, ri.ingredient_id, 'pending', CURRENT_TIMESTAMP " +
             "FROM recipeingredient ri WHERE ri.recipe_id = :recipeId",
             nativeQuery = true)
     int addRecipeIngredientsToCart(@Param("userId") Integer userId, @Param("recipeId") Integer recipeId);
@@ -69,6 +69,26 @@ public interface UserShoppingListRepository extends JpaRepository<UserShoppingLi
                                 @Param("recipeId") Integer recipeId,
                                 @Param("ingredientId") Integer ingredientId,
                                 @Param("status") String status);
+
+    @Transactional
+    @Modifying
+    @Query(value = "UPDATE user_shopping_list SET status = :status " +
+            "WHERE user_id = :userId AND ingredient_id = :ingredientId",
+            nativeQuery = true)
+    int updateIngredientStatusForUser(@Param("userId") Integer userId,
+                                      @Param("ingredientId") Integer ingredientId,
+                                      @Param("status") String status);
+
+    @Query("SELECT COUNT(s) > 0 FROM UserShoppingList s " +
+            "WHERE s.userId = :userId AND s.recipeId = :recipeId AND s.ingredientId = :ingredientId")
+    boolean existsByUserIdAndRecipeIdAndIngredientId(@Param("userId") Integer userId,
+                                                     @Param("recipeId") Integer recipeId,
+                                                     @Param("ingredientId") Integer ingredientId);
+
+    @Query("SELECT COUNT(s) > 0 FROM UserShoppingList s " +
+            "WHERE s.userId = :userId AND s.ingredientId = :ingredientId AND s.status = 'purchased'")
+    boolean existsPurchasedIngredientForUser(@Param("userId") Integer userId,
+                                             @Param("ingredientId") Integer ingredientId);
 
     // 删除购物车中的单个食材
     @Transactional

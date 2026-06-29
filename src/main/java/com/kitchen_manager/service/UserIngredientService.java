@@ -18,7 +18,7 @@ public class UserIngredientService {
     private final IngredientRepository ingredientRepository;
 
     public List<IngredientDetailResponse> getUserIngredients(Integer userId) {
-        List<UserIngredient> userIngredients = userIngredientRepository.findByUserId(userId);
+        List<UserIngredient> userIngredients = userIngredientRepository.findByUserIdAndQuantity(userId, 1);
         List<IngredientDetailResponse> responses = new ArrayList<>();
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
 

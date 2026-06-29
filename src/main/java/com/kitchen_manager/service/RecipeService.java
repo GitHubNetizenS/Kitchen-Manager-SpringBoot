@@ -1166,23 +1166,23 @@ public class RecipeService {
     }
 
     /**
-     * 更新食材购买状态（仅允许 pending -> purchased，并自动移除购物车记录）
+     * 更新食材购买状态，并同步该用户购物车中相同食材的所有清单项。
      */
     @Transactional
     public void updateCartIngredientStatus(Integer userId, Integer recipeId,
                                            Integer ingredientId, String status) {
-        String statusLower = status.toLowerCase();
-        if ("purchased".equals(statusLower)) {
-            // 删除购物车记录
-            shoppingListRepository.deleteIngredientFromCart(userId, recipeId, ingredientId);
-            // 添加到库存
-            addOrUpdateUserIngredient(userId, ingredientId);
-        } else if ("pending".equals(statusLower)) {
-            // 不允许从 purchased 改回 pending（实际上不会发生，因为已购买项已被删除）
-            throw new RuntimeException("不能将状态改为 pending");
-        } else {
-            throw new RuntimeException("无效状态值: " + status);
+        String statusLower = normalizeShoppingStatus(status);
+
+        if (!shoppingListRepository.existsByUserIdAndRecipeIdAndIngredientId(userId, recipeId, ingredientId)) {
+            throw new RuntimeException("购物车食材记录不存在");
         }
+
+        int updatedRows = shoppingListRepository.updateIngredientStatusForUser(userId, ingredientId, statusLower);
+        if (updatedRows == 0) {
+            throw new RuntimeException("购物车食材记录不存在");
+        }
+
+        syncUserIngredientAfterCartStatusChange(userId, ingredientId, statusLower);
     }
 
     /**
@@ -1194,27 +1194,23 @@ public class RecipeService {
     }
 
     /**
-     * 批量更新购物车中某个菜谱的所有食材状态
+     * 批量更新购物车中某个菜谱的所有食材状态。
      */
     @Transactional
     public void updateAllIngredientsStatus(Integer userId, Integer recipeId, String status) {
-        // 获取该菜谱在购物车中的所有食材
-        List<Object[]> ingredients = shoppingListRepository.findShoppingCartDetailsByUserId(userId);
+        String statusLower = normalizeShoppingStatus(status);
+        List<UserShoppingList> cartItems = shoppingListRepository.findByUserIdAndRecipeId(userId, recipeId);
+        Set<Integer> ingredientIds = cartItems.stream()
+                .map(UserShoppingList::getIngredientId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        for (Object[] ingredient : ingredients) {
-            Integer currentRecipeId = (Integer) ingredient[0];
-            Integer currentIngredientId = (Integer) ingredient[3];
-
-            if (currentRecipeId.equals(recipeId)) {
-                shoppingListRepository.updateIngredientStatus(
-                        userId, recipeId, currentIngredientId, status
-                );
-            }
+        for (Integer ingredientId : ingredientIds) {
+            updateCartIngredientStatus(userId, recipeId, ingredientId, statusLower);
         }
     }
 
     /**
-     * 获取用户购物车中的菜谱（分组），仅返回 pending 食材列表
+     * 获取用户购物车中的菜谱（分组），返回购物车中实际展示的全部食材。
      */
     public List<Map<String, Object>> getGroupedShoppingCartByUserId(Integer userId) {
         List<Integer> recipeIds = shoppingListRepository.findDistinctRecipeIdsByUserId(userId);
@@ -1222,39 +1218,26 @@ public class RecipeService {
             return Collections.emptyList();
         }
 
-        // 用户库存食材ID
-        Set<Integer> ownedSet = userIngredientRepository.findByUserId(userId)
-                .stream()
-                .map(UserIngredient::getIngredientId)
-                .collect(Collectors.toSet());
-
         List<Map<String, Object>> result = new ArrayList<>();
 
         for (Integer recipeId : recipeIds) {
             Recipe recipe = recipeRepository.findById(recipeId).orElse(null);
             if (recipe == null) continue;
 
-            List<Integer> allIngIds = recipeIngredientRepository.findIngredientIdsByRecipeId(recipeId);
-            int total = allIngIds.size();
-
-            // 已拥有数量（基于库存）
-            int ownedCount = 0;
-            for (Integer ingId : allIngIds) {
-                if (ownedSet.contains(ingId)) {
-                    ownedCount++;
-                }
-            }
-
-            // 购物车中该菜谱的食材（目前全部为 pending）
             List<UserShoppingList> cartItems = shoppingListRepository.findByUserIdAndRecipeId(userId, recipeId);
             List<Map<String, Object>> ingredients = new ArrayList<>();
+            int purchasedCount = 0;
             for (UserShoppingList item : cartItems) {
                 Ingredient ing = ingredientRepository.findById(item.getIngredientId()).orElse(null);
                 if (ing == null) continue;
+                String itemStatus = normalizeShoppingStatus(item.getStatus());
+                if ("purchased".equals(itemStatus)) {
+                    purchasedCount++;
+                }
                 Map<String, Object> ingMap = new HashMap<>();
                 ingMap.put("ingredientId", ing.getIngredientId());
                 ingMap.put("ingredientName", ing.getName());
-                ingMap.put("status", item.getStatus()); // 均为 pending
+                ingMap.put("status", itemStatus);
                 ingredients.add(ingMap);
             }
 
@@ -1264,8 +1247,8 @@ public class RecipeService {
             recipeMap.put("recipeId", recipeId);
             recipeMap.put("recipeName", recipe.getName());
             recipeMap.put("imageUrl", recipe.getImageUrl());
-            recipeMap.put("totalIngredients", total);
-            recipeMap.put("purchasedCount", ownedCount);
+            recipeMap.put("totalIngredients", ingredients.size());
+            recipeMap.put("purchasedCount", purchasedCount);
             recipeMap.put("latestAddedTime", latestTime);
             recipeMap.put("ingredients", ingredients);
             result.add(recipeMap);
@@ -1304,6 +1287,36 @@ public class RecipeService {
             ui.setStorageTime(new Timestamp(System.currentTimeMillis()));
             userIngredientRepository.save(ui);
         }
+    }
+
+    private String normalizeShoppingStatus(String status) {
+        if (status == null) {
+            throw new RuntimeException("状态值不能为空");
+        }
+        String statusLower = status.trim().toLowerCase(Locale.ROOT);
+        if (!"pending".equals(statusLower) && !"purchased".equals(statusLower)) {
+            throw new RuntimeException("无效状态值: " + status);
+        }
+        return statusLower;
+    }
+
+    private void syncUserIngredientAfterCartStatusChange(Integer userId, Integer ingredientId, String status) {
+        if ("purchased".equals(status)) {
+            addOrUpdateUserIngredient(userId, ingredientId);
+            return;
+        }
+
+        if (!shoppingListRepository.existsPurchasedIngredientForUser(userId, ingredientId)) {
+            markUserIngredientUnavailable(userId, ingredientId);
+        }
+    }
+
+    private void markUserIngredientUnavailable(Integer userId, Integer ingredientId) {
+        userIngredientRepository.findByUserIdAndIngredientId(userId, ingredientId)
+                .ifPresent(userIngredient -> {
+                    userIngredient.setQuantity(0);
+                    userIngredientRepository.save(userIngredient);
+                });
     }
 
 }

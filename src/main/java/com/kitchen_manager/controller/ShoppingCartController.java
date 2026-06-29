@@ -127,15 +127,15 @@ public class ShoppingCartController {
             System.out.println("=== ===");
 
             // 简单验证，允许大小写
-            String statusLower = status.toLowerCase();
+            String statusLower = status == null ? "" : status.trim().toLowerCase();
             if (!"pending".equals(statusLower) && !"purchased".equals(statusLower)) {
                 System.out.println("状态值无效: " + status);
                 return ApiResponse.error("状态值无效，必须是 'pending' 或 'purchased'");
             }
 
-            recipeService.updateCartIngredientStatus(userId, recipeId, ingredientId, status);
+            recipeService.updateCartIngredientStatus(userId, recipeId, ingredientId, statusLower);
             System.out.println("更新成功");
-            return ApiResponse.success("状态更新成功，食材已添加到库存", null);
+            return ApiResponse.success("状态更新成功", null);
         } catch (Exception e) {
             System.err.println("更新状态失败: " + e.getMessage());
             e.printStackTrace();
@@ -154,11 +154,12 @@ public class ShoppingCartController {
             @RequestParam("status") String status) {
 
         try {
-            if (!"pending".equals(status) && !"purchased".equals(status)) {
+            String statusLower = status == null ? "" : status.trim().toLowerCase();
+            if (!"pending".equals(statusLower) && !"purchased".equals(statusLower)) {
                 return ApiResponse.error("状态值无效，必须是 'pending' 或 'purchased'");
             }
 
-            recipeService.updateAllIngredientsStatus(userId, recipeId, status);
+            recipeService.updateAllIngredientsStatus(userId, recipeId, statusLower);
             return ApiResponse.success("批量更新成功", null);
         } catch (Exception e) {
             e.printStackTrace();
