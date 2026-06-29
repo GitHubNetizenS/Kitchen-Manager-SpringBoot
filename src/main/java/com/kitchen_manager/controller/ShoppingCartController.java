@@ -112,7 +112,7 @@ public class ShoppingCartController {
      * POST /api/cart/update-status
      */
     @PostMapping("/update-status")
-    public ApiResponse<Void> updateIngredientStatus(
+    public ApiResponse<List<Map<String, Object>>> updateIngredientStatus(
             @RequestParam("user_id") Integer userId,
             @RequestParam("recipe_id") Integer recipeId,
             @RequestParam("ingredient_id") Integer ingredientId,
@@ -134,8 +134,9 @@ public class ShoppingCartController {
             }
 
             recipeService.updateCartIngredientStatus(userId, recipeId, ingredientId, statusLower);
+            List<Map<String, Object>> recipes = recipeService.getGroupedShoppingCartByUserId(userId);
             System.out.println("更新成功");
-            return ApiResponse.success("状态更新成功", null);
+            return ApiResponse.success("状态更新成功", recipes);
         } catch (Exception e) {
             System.err.println("更新状态失败: " + e.getMessage());
             e.printStackTrace();
@@ -148,7 +149,7 @@ public class ShoppingCartController {
      * POST /api/cart/update-all-status
      */
     @PostMapping("/update-all-status")
-    public ApiResponse<Void> updateAllIngredientsStatus(
+    public ApiResponse<List<Map<String, Object>>> updateAllIngredientsStatus(
             @RequestParam("user_id") Integer userId,
             @RequestParam("recipe_id") Integer recipeId,
             @RequestParam("status") String status) {
@@ -160,7 +161,8 @@ public class ShoppingCartController {
             }
 
             recipeService.updateAllIngredientsStatus(userId, recipeId, statusLower);
-            return ApiResponse.success("批量更新成功", null);
+            List<Map<String, Object>> recipes = recipeService.getGroupedShoppingCartByUserId(userId);
+            return ApiResponse.success("批量更新成功", recipes);
         } catch (Exception e) {
             e.printStackTrace();
             return ApiResponse.error("批量更新失败: " + e.getMessage());
