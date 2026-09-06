@@ -1,1 +1,1 @@
-前端：https://github.com/GitHubNetizenS/Kitchen-Manager-Android/tree/android
+前端：https://github.com/GitHubNetizenS/Kitchen-Manager-Android
