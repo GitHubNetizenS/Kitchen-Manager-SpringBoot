@@ -29,4 +29,4 @@
 - `docker/`：后端、模型服务、MySQL 与 Elasticsearch 的 Docker Compose 部署配置。
 - `imgs/`：项目效果与算法原理示意图。
 
-Android 客户端：[kitchen-manager-Android](https://gitee.com/starriee/kitchen-manager-Android)。
+Android 客户端：[Kitchen-Manager-Android](https://github.com/GitHubNetizenS/Kitchen-Manager-Android)。
